@@ -1,6 +1,7 @@
 #pragma once
-
-#if __cplusplus < 201703L
+#if __cplusplus >= 201703L
+#include <variant>
+#else
 
 #include "utility.hpp"
 #include "memory.hpp"
@@ -9,86 +10,25 @@
 
 namespace std
 {
-    enum : size_t { variant_npos = size_t(-1) };
-
     template <class...>
     struct variant;
 
-    // uninitialized<T> is guaranteed to be a trivially destructible type,
-    // even if T is not
-    template <class T, bool = std::is_trivially_destructible<T>::value>
-    struct uninitialized;
+    // variant_size
+    template <class>
+    struct variant_size;
 
-    template <class T>
-    struct uninitialized<T, true>
-    {
-        uninitialized() = default;
+    template <class Variant>
+    struct variant_size<const Variant> : variant_size<Variant> {};
 
-        template <class... Args>
-        uninitialized(std::in_place_t, Args&&... args)
-        : storage_(std::forward<Args>(args)...)
-        { }
+    template <class Variant>
+    struct variant_size<volatile Variant> : variant_size<Variant> {};
 
-        const T& get() const & { return storage_; }
-        T& get() & { return storage_; }
+    template <class Variant>
+    struct variant_size<const volatile Variant> : variant_size<Variant> {};
 
-        const T&& get() const && { return std::move(storage_); }
-        T&& get() && { return std::move(storage_); }
-
-        T storage_;
-    };
-
-    template <class T>
-    struct uninitialized<T, false>
-    {
-        uninitialized() = default;
-
-        template <class... Args>
-        uninitialized(std::in_place_t, Args&&... args) {
-            ::new (storage_) T(std::forward<Args>(args)...);
-        }
-
-        const T& get() const & { return *(T*)storage_; }
-        T& get() & { return *(T*)storage_; }
-
-        const T&& get() const && { return std::move(*(T*)storage_); }
-        T&& get() && { return std::move(*(T*)storage_); }
-
-        unsigned char storage_[sizeof(T)];
-    };
-
-    template <class...>
-    union variadic_union { };
-
-    template <class T, class... Ts>
-    union variadic_union<T, Ts...>
-    {
-        constexpr variadic_union() : rest_() { }
-
-        template <class... Args>
-        constexpr variadic_union(std::in_place_index_t<0>, Args&&...args)
-        : value_(std::in_place_t{}, std::forward<Args>(args)...)
-        { }
-
-        template <size_t N, class... Args>
-        constexpr variadic_union(std::in_place_index_t<N>, Args&&...args)
-        : rest_(std::in_place_index_t<N-1>{}, std::forward<Args>(args)...)
-        { }
-
-        uninitialized<T> value_;
-        variadic_union<Ts...> rest_;
-    };
-
-    template <class U> // U is variadic_union<...>
-    constexpr decltype(auto) get(std::in_place_index_t<0>, U&& u) {
-        // Note, std::forward, depending on lvalue or rvalue get() will be & or &&
-        return std::forward<U>(u).value_.get();
-    }
-
-    template <size_t N, class U>
-    constexpr decltype(auto) get(std::in_place_index_t<N>, U&& u) {
-        return get(std::in_place_index_t<N-1>{}, std::forward<U>(u).rest_);
-    }
+    template <class... Ts>
+    struct variant_size<variant<Ts...>>
+    : std::integral_constant<size_t, sizeof...(Ts)> {};
 
     // variant_alternative
     template <size_t N, class Variant>
@@ -96,37 +36,157 @@ namespace std
 
     template <size_t N, class First, class... Rest>
     struct variant_alternative<N, variant<First, Rest...>>
-    : variant_alternative<N - 1, variant<Rest...>>
-    { };
+    : variant_alternative<N - 1, variant<Rest...>> {};
 
     template <class First, class... Rest>
-    struct variant_alternative<0, variant<First, Rest...>>
-    {
+    struct variant_alternative<0, variant<First, Rest...>> {
         using type = First;
     };
 
     template <size_t N, class Variant>
     using variant_alternative_t = typename variant_alternative<N, Variant>::type;
 
-    template <class T, bool = std::is_trivially_destructible<std::decay_t<T>>::value>
-    struct value_dtor {
-        static void destroy(T&&) {}
-    };
-    template <class T>
-    struct value_dtor<T, false> {
-        static void destroy(T&& v) {
-            std::destroy_at(std::addressof(v));
-        }
+    template <size_t N, class Variant>
+    struct variant_alternative<N, const Variant> {
+        using type = std::add_const_t<variant_alternative_t<N, Variant>>;
     };
 
-    // erased_dtor
-    template <class Variant, size_t N>
-    void erased_dtor(Variant&& v) {
-        value_dtor<decltype(get<N>(v))>::destroy(get<N>(v));
-    }
+    template <size_t N, class Variant>
+    struct variant_alternative<N, volatile Variant> {
+        using type = std::add_volatile_t<variant_alternative_t<N, Variant>>;
+    };
 
-    namespace detail
+    template <size_t N, class Variant>
+    struct variant_alternative<N, const volatile Variant> {
+        using type = std::add_cv_t<variant_alternative_t<N, Variant>>;
+    };
+
+    // variant_npos
+    enum : size_t { variant_npos = size_t(-1) };
+
+    #if 0
+    // get
+    template <size_t N, class... Ts>
+    constexpr variant_alternative_t<N, variant<Ts...>>&
+    get(variant<Ts...>&);
+
+    template <size_t N, class... Ts>
+    constexpr variant_alternative_t<N, variant<Ts...>>&&
+    get(variant<Ts...>&&);
+
+    template <size_t N, class... Ts>
+    constexpr variant_alternative_t<N, variant<Ts...>> const&
+    get(const variant<Ts...>&);
+
+    template <size_t N, class... Ts>
+    constexpr variant_alternative_t<N, variant<Ts...>> const&&
+    get(const variant<Ts...>&&);
+    #endif
+
+    // detail
+    namespace variant_detail
     {
+        // Returns the first appearence of T in Ts.
+        // Returns sizeof...(Ts) if T is not in Ts.
+        template <class T, class... Ts>
+        struct index_of : std::integral_constant<size_t, 0> {};
+
+        template <class T, class First, class... Rest>
+        struct index_of<T, First, Rest...> : std::integral_constant<
+            size_t,
+            std::is_same<T, First>::value ? 0 : index_of<T, Rest...>::value + 1> {};
+
+        // uninitialized<T> is guaranteed to be a trivially destructible type,
+        // even if T is not
+        template <class T, bool = std::is_trivially_destructible<T>::value>
+        struct uninitialized;
+
+        template <class T>
+        struct uninitialized<T, true>
+        {
+            template <class... Args>
+            constexpr uninitialized(std::in_place_t, Args&&... args)
+            : storage_(std::forward<Args>(args)...)
+            { }
+
+            constexpr const T& get() const & noexcept { return storage_; }
+            constexpr T& get() & noexcept { return storage_; }
+
+            constexpr const T&& get() const && noexcept { return std::move(storage_); }
+            constexpr T&& get() && noexcept { return std::move(storage_); }
+
+            T storage_;
+        };
+
+        template <class T>
+        struct uninitialized<T, false>
+        {
+            template <class... Args>
+            constexpr uninitialized(std::in_place_t, Args&&... args) {
+                ::new (storage_) T(std::forward<Args>(args)...);
+            }
+
+            const T& get() const & noexcept { return *(T*)storage_; }
+            T& get() & noexcept { return *(T*)storage_; }
+
+            const T&& get() const && noexcept { return std::move(*(T*)storage_); }
+            T&& get() && noexcept { return std::move(*(T*)storage_); }
+
+            unsigned char storage_[sizeof(T)];
+        };
+
+        // Defines members and ctors
+        template <class...>
+        union variadic_union {};
+
+        template <class First, class... Rest>
+        union variadic_union<First, Rest...>
+        {
+            constexpr variadic_union() : rest_() { }
+
+            template <class... Args>
+            constexpr variadic_union(std::in_place_index_t<0>, Args&&...args)
+            : first_(std::in_place_t{}, std::forward<Args>(args)...)
+            { }
+
+            template <size_t N, class... Args>
+            constexpr variadic_union(std::in_place_index_t<N>, Args&&...args)
+            : rest_(std::in_place_index_t<N - 1>{}, std::forward<Args>(args)...)
+            { }
+
+            uninitialized<First> first_;
+            variadic_union<Rest...> rest_;
+        };
+
+        // TODO fix below
+
+        template <class U> // U is variadic_union<...>
+        constexpr decltype(auto) get(std::in_place_index_t<0>, U&& u) {
+            return std::forward<U>(u).first_.get();
+        }
+
+        template <size_t N, class U>
+        constexpr decltype(auto) get(std::in_place_index_t<N>, U&& u) {
+            return get(std::in_place_index_t<N-1>{}, std::forward<U>(u).rest_);
+        }
+
+        template <class T, bool = std::is_trivially_destructible<std::decay_t<T>>::value>
+        struct value_dtor {
+            static void destroy(T&&) {}
+        };
+        template <class T>
+        struct value_dtor<T, false> {
+            static void destroy(T&& v) {
+                std::destroy_at(std::addressof(v));
+            }
+        };
+
+        // erased_dtor
+        template <class Variant, size_t N>
+        void erased_dtor(Variant&& v) {
+            value_dtor<decltype(get<N>(v))>::destroy(get<N>(v));
+        }
+
         // Takes Ts and create an indexed overloaded s_fun for each type.
         // If a type appears more than once in Ts, create only one overload.
         template <class... Ts>
@@ -172,7 +232,7 @@ namespace std
                 !std::disjunction<std::is_same<T, Rest>...>::value && is_unique<Rest...>::value;
         };
 
-    } // namespace detail
+    } // namespace variant_detail
 
     template <class... Ts>
     struct variant {
@@ -183,13 +243,13 @@ namespace std
             "variant must have no reference alternative");
         static_assert(!std::disjunction<std::is_void<Ts>...>::value,
             "variant must have no void alternative");
-        static_assert(detail::is_unique<Ts...>::value,
+        static_assert(variant_detail::is_unique<Ts...>::value,
             "variant must have different types");
 
         template <size_t... I>
         void reset_impl(std::index_sequence<I...>) {
             static constexpr void (*vtable[])(const variant&) = {
-                &erased_dtor<const variant&, I>...
+                &variant_detail::erased_dtor<const variant&, I>...
             };
             if (index_ != variant_npos)
                 vtable[index_](*this);
@@ -202,9 +262,9 @@ namespace std
 
         template <class T>
         static constexpr size_t accepted_index =
-            detail::accepted_index<T, variant>::value;
+            variant_detail::accepted_index<T, variant>::value;
 
-        variadic_union<Ts...> union_;
+        variant_detail::variadic_union<Ts...> union_;
         size_t index_ = variant_npos;
 
         template <size_t N, class Variant>
@@ -272,13 +332,23 @@ namespace std
         return get(std::in_place_index_t<N>{}, std::forward<Variant>(v).union_);
     }
 
-    // Get number of elements in visitor
-    template <class>
-    struct variant_size;
+    #if 0
+    template <size_t N, class... Ts>
+    constexpr variant_alternative_t<N, variant<Ts...>>&
+    get(variant<Ts...>&);
 
-    template <class... Ts>
-    struct variant_size<variant<Ts...>> : std::integral_constant<size_t, sizeof...(Ts)>
-    { };
+    template <size_t N, class... Ts>
+    constexpr variant_alternative_t<N, variant<Ts...>>&&
+    get(variant<Ts...>&&);
+
+    template <size_t N, class... Ts>
+    constexpr variant_alternative_t<N, variant<Ts...>> const&
+    get(const variant<Ts...>&);
+
+    template <size_t N, class... Ts>
+    constexpr variant_alternative_t<N, variant<Ts...>> const&&
+    get(const variant<Ts...>&&);
+    #endif
 
     // Should inherit from std::exception, but for shorter version...
     using bad_variant_access = std::runtime_error;
