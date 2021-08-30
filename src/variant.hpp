@@ -110,14 +110,13 @@ namespace std
 
     template <class T, bool = std::is_trivially_destructible<std::decay_t<T>>::value>
     struct value_dtor {
+        static void destroy(T&&) {}
+    };
+    template <class T>
+    struct value_dtor<T, false> {
         static void destroy(T&& v) {
             std::destroy_at(std::addressof(v));
         }
-    };
-
-    template <class T>
-    struct value_dtor<T, true> {
-        static void destroy(T&&) {}
     };
 
     // erased_dtor
@@ -163,7 +162,6 @@ namespace std
             static constexpr size_t value = sizeof...(Ts) - 1 -
                 decltype(overload_set<Ts...>::s_fun(std::declval<T>()))::value;
         };
-#endif
 
         template <class...>
         struct is_unique : std::true_type { };
