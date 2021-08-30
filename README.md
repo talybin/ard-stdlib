@@ -1,2 +1,2 @@
-# ard-variant
-std::variant implementation for C++14 under ard namespace
+# ard-cpp17
+Library of type traits and tools from C++17.
