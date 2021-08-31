@@ -17,10 +17,18 @@ int main()
     std::cout << "value before: " << std::get<3>(v) << '\n';
 
     v = 3.14f;
+    //std::get<9>(v);
+    //std::get<1>(v);
+    //std::get<0>(v);
+
     std::cout << "cur index after: " << v.index() << '\n';
     std::cout << "value after: " << std::get<1>(v) << '\n';
 
-    std::visit([](auto x) { std::cout << "visiting: " << x << '\n'; }, v);
+    const char* ret = std::visit([](auto x) {
+        std::cout << "visiting: " << x << '\n';
+        return "test";
+    }, v);
+    std::cout << "ret: " << ret << '\n';
 
     //v.reset();
 

@@ -6,6 +6,7 @@
 #include "utility.hpp"
 #include "memory.hpp"
 #include "type_traits.hpp"
+#include "functional.hpp"
 #include <exception>
 
 namespace std
@@ -32,7 +33,10 @@ namespace std
 
     // variant_alternative
     template <size_t N, class Variant>
-    struct variant_alternative;
+    struct variant_alternative {
+        static_assert(N < variant_size<Variant>::value,
+            "The index must be in [0, number of alternatives)");
+    };
 
     template <size_t N, class First, class... Rest>
     struct variant_alternative<N, variant<First, Rest...>>
@@ -125,6 +129,12 @@ namespace std
 
         template <size_t N>
         struct is_in_place_tag<std::in_place_index_t<N>> : std::true_type {};
+
+        // std::visit invoker
+        template <size_t I, class Visitor, class Variant>
+        inline decltype(auto) visit_invoke(Visitor&& visitor, Variant&& var) {
+            return std::forward<Visitor>(visitor)(get<I>(std::forward<Variant>(var)));
+        }
 
         // uninitialized<T> is guaranteed to be a trivially destructible type,
         // even if T is not
@@ -566,16 +576,12 @@ namespace std
             std::is_constructible<variant_alternative_t<N, variant>, Args...>::value,
             variant_alternative_t<N, variant>&>
         emplace(Args&&... args) {
-            static_assert(N < sizeof...(Ts),
-                "The index should be in [0, number of alternatives)");
             // Provide the strong exception-safety guarantee when possible,
-            // to avoid becoming valueless
-
-            // This construction might throw
+            // to avoid becoming valueless.
+            // This construction might throw.
             variant tmp(std::in_place_index_t<N>{}, std::forward<Args>(args)...);
-            // But this step won't
+            // But this step won't.
             *this = std::move(tmp);
-
             return std::get<N>(*this);
         }
 
@@ -605,8 +611,6 @@ namespace std
     template <size_t N, class... Ts>
     constexpr variant_alternative_t<N, variant<Ts...>>&
     get(variant<Ts...>& v) {
-        static_assert(N < sizeof...(Ts),
-            "The index must be in [0, number of alternatives)");
         if (v.index() != N)
             throw_bad_variant_access(v.valueless_by_exception());
         return variant_detail::get<N>(v);
@@ -615,8 +619,6 @@ namespace std
     template <size_t N, class... Ts>
     constexpr variant_alternative_t<N, variant<Ts...>>&&
     get(variant<Ts...>&& v) {
-        static_assert(N < sizeof...(Ts),
-            "The index must be in [0, number of alternatives)");
         if (v.index() != N)
             throw_bad_variant_access(v.valueless_by_exception());
         return variant_detail::get<N>(std::move(v));
@@ -625,8 +627,6 @@ namespace std
     template <size_t N, class... Ts>
     constexpr variant_alternative_t<N, variant<Ts...>> const&
     get(const variant<Ts...>& v) {
-        static_assert(N < sizeof...(Ts),
-            "The index must be in [0, number of alternatives)");
         if (v.index() != N)
             throw_bad_variant_access(v.valueless_by_exception());
         return variant_detail::get<N>(v);
@@ -635,47 +635,37 @@ namespace std
     template <size_t N, class... Ts>
     constexpr variant_alternative_t<N, variant<Ts...>> const&&
     get(const variant<Ts...>&& v) {
-        static_assert(N < sizeof...(Ts),
-            "The index must be in [0, number of alternatives)");
         if (v.index() != N)
             throw_bad_variant_access(v.valueless_by_exception());
         return variant_detail::get<N>(std::move(v));
     }
 
-    // TODO fix me
-
-    // Visitor details
-    namespace detail
-    {
-        template <size_t I, class Visitor, class Variant>
-        inline void visit_invoke(Visitor&& visitor, Variant&& var) {
-            std::forward<Visitor>(visitor)(get<I>(std::forward<Variant>(var)));
-        }
-
-    } // namespace detail
-
     // Visitor implementation
     template <class Visitor, class Variant, size_t... I>
-    constexpr void visit(Visitor&& visitor, Variant&& var, std::index_sequence<I...>)
+    constexpr decltype(auto)
+    visit(Visitor&& visitor, Variant&& var, std::index_sequence<I...>)
     {
         if (var.valueless_by_exception())
-            throw_bad_variant_access("Unexpected index");
+            throw_bad_variant_access("std::visit: variant is valueless");
 
-        constexpr void (*vtable[])(Visitor&& visitor, Variant&& var) = {
-            &detail::visit_invoke<I, Visitor, Variant>...
+        using R = std::invoke_result_t<
+            Visitor, decltype(std::get<0>(std::declval<Variant>()))>;
+
+        constexpr R (*vtable[])(Visitor&& visitor, Variant&& var) = {
+            &variant_detail::visit_invoke<I, Visitor, Variant>...
         };
 
-        vtable[var.index()](
+        return vtable[var.index()](
             std::forward<Visitor>(visitor), std::forward<Variant>(var));
     }
 
-    // Simplified visitor. Actual implementation takes a list of variants
-    // and can return a value.
+    // Support only one variant for now
     template <class Visitor, class Variant>
-    constexpr void visit(Visitor&& visitor, Variant&& var)
+    constexpr decltype(auto)
+    visit(Visitor&& visitor, Variant&& var)
     {
         using T = std::remove_reference_t<Variant>;
-        visit(
+        return visit(
             std::forward<Visitor>(visitor),
             std::forward<Variant>(var),
             std::make_index_sequence<variant_size<T>::value>());
