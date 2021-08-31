@@ -1,6 +1,7 @@
 #include "variant.hpp"
 #include <iostream>
 
+
 int main()
 {
     std::variant<int, float, double, std::string> v = "hej";
@@ -45,5 +46,49 @@ int main()
 
     v2 = 42;
     std::cout << v2.index() << '\n';
+
+    int val = 0;
+    using testv1 = std::variant<int>;
+
+    auto f1 = [&val](int) -> int { return val; };
+    auto f2 = [&val](int) -> int& { return val; };
+    auto f3 = [&val](int) -> const int& { return val; };
+    auto f4 = [&val](int) -> const int&& { return std::move(val); };
+    auto f5 = [&val](int) -> int&& { return std::move(val); };
+ 
+
+    static_assert(std::is_same<
+        decltype(f1(std::get<0>(std::declval<testv1>()))), int>::value);
+
+    static_assert(std::is_same<
+        decltype(std::visit(f1, std::variant<int>{0})), int>::value);
+
+
+    static_assert(std::is_same<
+        decltype(f2(std::get<0>(std::declval<testv1>()))), int&>::value);
+
+    static_assert(std::is_same<
+        decltype(std::visit(f2, std::variant<int>{0})), int&>::value);
+
+
+    static_assert(std::is_same<
+        decltype(f3(std::get<0>(std::declval<testv1>()))), const int&>::value);
+
+    static_assert(std::is_same<
+        decltype(std::visit(f3, std::variant<int>{0})), const int&>::value);
+
+
+    static_assert(std::is_same<
+        decltype(f4(std::get<0>(std::declval<testv1>()))), const int&&>::value);
+
+    static_assert(std::is_same<
+        decltype(std::visit(f4, std::variant<int>{0})), const int&&>::value);
+
+
+    static_assert(std::is_same<
+        decltype(f5(std::get<0>(std::declval<testv1>()))), int&&>::value);
+
+    static_assert(std::is_same<
+        decltype(std::visit(f5, std::variant<int>{0})), int&&>::value);
 }
 

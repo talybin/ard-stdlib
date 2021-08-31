@@ -6,7 +6,6 @@
 #include "utility.hpp"
 #include "memory.hpp"
 #include "type_traits.hpp"
-#include "functional.hpp"
 #include <exception>
 
 namespace std
@@ -648,8 +647,7 @@ namespace std
         if (var.valueless_by_exception())
             throw_bad_variant_access("std::visit: variant is valueless");
 
-        using R = std::invoke_result_t<
-            Visitor, decltype(std::get<0>(std::declval<Variant>()))>;
+        using R = decltype(visitor(std::get<0>(std::declval<Variant>())));
 
         constexpr R (*vtable[])(Visitor&& visitor, Variant&& var) = {
             &variant_detail::visit_invoke<I, Visitor, Variant>...
