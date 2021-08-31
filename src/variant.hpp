@@ -6,7 +6,7 @@
 #include "utility.hpp"
 #include "memory.hpp"
 #include "type_traits.hpp"
-#include <stdexcept>
+#include <exception>
 
 namespace std
 {
@@ -64,7 +64,6 @@ namespace std
     // variant_npos
     enum : size_t { variant_npos = size_t(-1) };
 
-    #if 0
     // get
     template <size_t N, class... Ts>
     constexpr variant_alternative_t<N, variant<Ts...>>&
@@ -81,7 +80,6 @@ namespace std
     template <size_t N, class... Ts>
     constexpr variant_alternative_t<N, variant<Ts...>> const&&
     get(const variant<Ts...>&&);
-    #endif
 
     // detail
     namespace variant_detail
@@ -95,6 +93,38 @@ namespace std
         struct index_of<T, First, Rest...> : std::integral_constant<
             size_t,
             std::is_same<T, First>::value ? 0 : index_of<T, Rest...>::value + 1> {};
+
+        // How many times does T appear in type sequence?
+        template <class T, class... Ts>
+        struct type_count : std::integral_constant<size_t, 0> {};
+
+        template <class T, class First, class... Rest>
+        struct type_count<T, First, Rest...> : std::integral_constant<
+            size_t,
+            type_count<T, Rest...>::value + std::is_same<T, First>::value> {};
+
+        // Check T appear exactly once in type list
+        template <class T, class... Ts>
+        struct exactly_once : std::bool_constant<type_count<T, Ts...>::value == 1> {};
+
+        // Check all types appear exactly once in type list
+        template <class...>
+        struct is_unique : std::true_type { };
+
+        template <class T, class...Rest>
+        struct is_unique<T, Rest...> : std::bool_constant<
+            !std::disjunction<std::is_same<T, Rest>...>::value &&
+            is_unique<Rest...>::value> {};
+
+        // Chack T is in_place_type_t or in_place_index_t
+        template <class T>
+        struct is_in_place_tag : std::false_type {};
+
+        template <class T>
+        struct is_in_place_tag<std::in_place_type_t<T>> : std::true_type {};
+
+        template <size_t N>
+        struct is_in_place_tag<std::in_place_index_t<N>> : std::true_type {};
 
         // uninitialized<T> is guaranteed to be a trivially destructible type,
         // even if T is not
@@ -158,22 +188,31 @@ namespace std
             variadic_union<Rest...> rest_;
         };
 
-        // TODO fix below
-
-        template <class U> // U is variadic_union<...>
-        constexpr decltype(auto) get(std::in_place_index_t<0>, U&& u) {
-            return std::forward<U>(u).first_.get();
+        // variadic_union get
+        template <class Union>
+        constexpr decltype(auto) get(std::in_place_index_t<0>, Union&& u) noexcept {
+            return std::forward<Union>(u).first_.get();
         }
 
-        template <size_t N, class U>
-        constexpr decltype(auto) get(std::in_place_index_t<N>, U&& u) {
-            return get(std::in_place_index_t<N-1>{}, std::forward<U>(u).rest_);
+        template <size_t N, class Union>
+        constexpr decltype(auto) get(std::in_place_index_t<N>, Union&& u) noexcept {
+            return variant_detail::get(
+                std::in_place_index_t<N - 1>{}, std::forward<Union>(u).rest_);
         }
 
+        // variant get
+        template <size_t N, class Variant>
+        constexpr decltype(auto) get(Variant&& v) noexcept {
+            return variant_detail::get(
+                std::in_place_index_t<N>{}, std::forward<Variant>(v).union_);
+        }
+
+        // Destruct value
         template <class T, bool = std::is_trivially_destructible<std::decay_t<T>>::value>
         struct value_dtor {
             static void destroy(T&&) {}
         };
+
         template <class T>
         struct value_dtor<T, false> {
             static void destroy(T&& v) {
@@ -195,16 +234,14 @@ namespace std
         };
 
         template <class First, class... Rest>
-        struct overload_set<First, Rest...> : overload_set<Rest...>
-        {
+        struct overload_set<First, Rest...> : overload_set<Rest...> {
             using overload_set<Rest...>::s_fun;
             static std::integral_constant<size_t, sizeof...(Rest)> s_fun(First);
         };
 
         // Skip default init
         template <class... Rest>
-        struct overload_set<void, Rest...> : overload_set<Rest...>
-        {
+        struct overload_set<void, Rest...> : overload_set<Rest...> {
             using overload_set<Rest...>::s_fun;
         };
 
@@ -223,19 +260,155 @@ namespace std
                 decltype(overload_set<Ts...>::s_fun(std::declval<T>()))::value;
         };
 
-        template <class...>
-        struct is_unique : std::true_type { };
+        // variant_base
+        template <class... Ts>
+        struct variant_base {
+        private:
+            template <size_t... I>
+            void reset_impl(std::index_sequence<I...>) {
+                static constexpr void (*vtable[])(const variant<Ts...>&) = {
+                    &variant_detail::erased_dtor<const variant<Ts...>&, I>...
+                };
+                if (index_ != variant_npos)
+                    vtable[index_](static_cast<const variant<Ts...>&>(*this));
+            }
 
-        template <class T, class...Rest>
-        struct is_unique<T, Rest...> {
-            static constexpr bool value =
-                !std::disjunction<std::is_same<T, Rest>...>::value && is_unique<Rest...>::value;
+        protected:
+            constexpr variant_base() : index_(variant_npos) {}
+
+            template <size_t N, class... Args>
+            constexpr variant_base(std::in_place_index_t<N>, Args&&... args)
+            : union_(std::in_place_index_t<N>{}, std::forward<Args>(args)...)
+            , index_(N)
+            {}
+
+            ~variant_base() {
+                reset();
+            }
+
+            void reset() {
+                reset_impl(std::index_sequence_for<Ts...>());
+                index_ = variant_npos;
+            }
+
+            variant_detail::variadic_union<Ts...> union_;
+            size_t index_;
         };
 
     } // namespace variant_detail
 
+    // holds_alternative
+    template <class T, class... Ts>
+    constexpr bool holds_alternative(const variant<Ts...>& v) noexcept {
+        static_assert(variant_detail::exactly_once<T, Ts...>::value,
+            "T must occur exactly once in alternatives");
+        return v.index() == variant_detail::index_of<T, Ts...>::value;
+    }
+
+    // get
+    template <class T, class... Ts>
+    constexpr T& get(variant<Ts...>& v) {
+        static_assert(variant_detail::exactly_once<T, Ts...>::value,
+            "T must occur exactly once in alternatives");
+        static_assert(!std::is_void<T>::value, "T must not be void");
+        return get<variant_detail::index_of<T, Ts...>>(v);
+    }
+
+    template <class T, class... Ts>
+    constexpr T&& get(variant<Ts...>&& v) {
+        static_assert(variant_detail::exactly_once<T, Ts...>::value,
+            "T must occur exactly once in alternatives");
+        static_assert(!std::is_void<T>::value, "T must not be void");
+        return get<variant_detail::index_of<T, Ts...>>(std::move(v));
+    }
+
+    template <class T, class... Ts>
+    constexpr const T& get(const variant<Ts...>& v) {
+        static_assert(variant_detail::exactly_once<T, Ts...>::value,
+            "T must occur exactly once in alternatives");
+        static_assert(!std::is_void<T>::value, "T must not be void");
+        return get<variant_detail::index_of<T, Ts...>>(v);
+    }
+
+    template <class T, class... Ts>
+    constexpr const T&& get(const variant<Ts...>&& v) {
+        static_assert(variant_detail::exactly_once<T, Ts...>::value,
+            "T must occur exactly once in alternatives");
+        static_assert(!std::is_void<T>::value, "T must not be void");
+        return get<variant_detail::index_of<T, Ts...>>(std::move(v));
+    }
+
+    // get_if
+    template <size_t N, class... Ts>
+    constexpr std::add_pointer_t<variant_alternative_t<N, variant<Ts...>>>
+    get_if(variant<Ts...>* ptr) noexcept {
+        using T = variant_alternative_t<N, variant<Ts...>>;
+        static_assert(N < sizeof...(Ts),
+            "The index must be in [0, number of alternatives)");
+        if (ptr && ptr->index() == N)
+            return std::addressof(variant_detail::get<N>(*ptr));
+        return nullptr;
+    }
+
+    template <size_t N, class... Ts>
+    constexpr std::add_pointer_t<const variant_alternative_t<N, variant<Ts...>>>
+    get_if(const variant<Ts...>* ptr) noexcept { 
+        using T = variant_alternative_t<N, variant<Ts...>>;
+        static_assert(N < sizeof...(Ts),
+            "The index must be in [0, number of alternatives)");
+        if (ptr && ptr->index() == N)
+            return std::addressof(variant_detail::get<N>(*ptr));
+        return nullptr;
+    }
+
+    template <class T, class... Ts>
+    constexpr std::add_pointer_t<T>
+    get_if(variant<Ts...>* ptr) noexcept {
+        static_assert(variant_detail::exactly_once<T, Ts...>::value,
+            "T must occur exactly once in alternatives");
+        static_assert(!std::is_void<T>::value, "T must not be void");
+        return get_if<variant_detail::index_of<T, Ts...>>(ptr);
+    }
+
+    template <class T, class... Ts>
+    constexpr std::add_pointer_t<const T>
+    get_if(const variant<Ts...>* ptr) noexcept {
+        static_assert(variant_detail::exactly_once<T, Ts...>::value,
+            "T must occur exactly once in alternatives");
+        static_assert(!std::is_void<T>::value, "T must not be void");
+        return get_if<variant_detail::index_of<T, Ts...>>(ptr);
+    }
+
+    // monostate
+    struct monostate {};
+
+    // bad_variant_access
+    struct bad_variant_access : std::exception
+    {
+        bad_variant_access() noexcept {}
+        const char* what() const noexcept override { return reason_; }
+
+    private:
+        bad_variant_access(const char* reason) noexcept : reason_(reason) {}
+        const char* reason_ = "bad variant access";
+        friend void throw_bad_variant_access(const char* what);
+    };
+
+    // throw_bad_variant_access
+    inline void throw_bad_variant_access(const char* what) {
+        throw std::bad_variant_access(what);
+    }
+
+    inline void throw_bad_variant_access(bool valueless) {
+        if (valueless)
+            throw_bad_variant_access("std::get: variant is valueless");
+        else
+            throw_bad_variant_access("std::get: wrong index for variant");
+    }
+
+    // variant
     template <class... Ts>
-    struct variant {
+    struct variant : variant_detail::variant_base<Ts...> {
     private:
         static_assert(sizeof...(Ts) > 0,
             "variant must have at least one alternative");
@@ -246,112 +419,230 @@ namespace std
         static_assert(variant_detail::is_unique<Ts...>::value,
             "variant must have different types");
 
-        template <size_t... I>
-        void reset_impl(std::index_sequence<I...>) {
-            static constexpr void (*vtable[])(const variant&) = {
-                &variant_detail::erased_dtor<const variant&, I>...
-            };
-            if (index_ != variant_npos)
-                vtable[index_](*this);
-        }
+        using base = variant_detail::variant_base<Ts...>;
 
-        void reset() {
-            reset_impl(std::index_sequence_for<Ts...>());
-            index_ = variant_npos;
-        }
+        template <class T>
+        using not_self = std::negation<std::is_same<std::decay_t<T>, variant>>;
+
+        template <size_t N, class = std::enable_if_t<(N < sizeof...(Ts))>>
+        using to_type = variant_alternative_t<N, variant>;
 
         template <class T>
         static constexpr size_t accepted_index =
             variant_detail::accepted_index<T, variant>::value;
 
-        variant_detail::variadic_union<Ts...> union_;
-        size_t index_ = variant_npos;
-
-        template <size_t N, class Variant>
-        friend constexpr decltype(auto) get(Variant&&);
-
-    public:
-        constexpr variant() : index_(variant_npos) { }
-
-        template <class T,
-            class = std::enable_if_t<not std::is_same<std::decay_t<T>, variant>::value> >
-        constexpr variant(T&& t)
-        : variant(std::in_place_index_t< accepted_index<T> >{}, std::forward<T>(t))
-        { }
-
-        template <size_t N, class... Args>
-        constexpr variant(std::in_place_index_t<N>, Args&&... args)
-        : union_(std::in_place_index_t<N>{}, std::forward<Args>(args)...)
-        , index_(N)
-        { }
-
-        ~variant() {
-            reset();
-        }
+        template <class T, class = std::enable_if_t<not_self<T>::value>>
+        using accepted_type = to_type<accepted_index<T>>;
 
         template <class T>
-        std::enable_if_t<not std::is_same<std::decay_t<T>, variant>::value, variant&>
-        operator=(T&& t) {
+        static constexpr bool not_in_place_tag =
+            !variant_detail::is_in_place_tag<std::decay_t<T>>::value;
+
+        template <class T>
+        static constexpr bool exactly_once =
+            variant_detail::exactly_once<T, Ts...>::value;
+
+        template <class T>
+        static constexpr size_t index_of = variant_detail::index_of<T, Ts...>::value;
+
+        // Getter
+        template <size_t N, class Variant>
+        friend constexpr decltype(auto) variant_detail::get(Variant&&) noexcept;
+
+    public:
+        variant() = default;
+        variant(const variant& rhs) = default;
+        variant(variant&&) = default;
+        variant& operator=(const variant&) = default;
+        variant& operator=(variant&&) = default;
+        ~variant() = default;
+
+        // Counstructors
+        // https://en.cppreference.com/w/cpp/utility/variant/variant
+
+        // 4
+        template <class T,
+            class = std::enable_if_t<not_in_place_tag<T>>,
+            class U = accepted_type<T&&>,
+            class = std::enable_if_t<
+                exactly_once<U> && std::is_constructible<U, T>::value>
+        >
+        constexpr
+        variant(T&& t)
+        noexcept(std::is_nothrow_constructible<U, T>::value)
+        : variant(std::in_place_index_t<accepted_index<T>>{}, std::forward<T>(t))
+        {}
+
+        // 5
+        template <class T, class... Args,
+            class = std::enable_if_t<
+                exactly_once<T> && std::is_constructible<T, Args...>::value>
+        >
+        constexpr explicit
+        variant(std::in_place_type_t<T>, Args&&... args)
+        : variant(std::in_place_index_t<index_of<T>>{}, std::forward<Args>(args)...)
+        {}
+
+        // 6
+        template <class T, class U, class... Args,
+            class = std::enable_if_t<
+                exactly_once<T> &&
+                std::is_constructible<T, std::initializer_list<U>&, Args...>::value>
+        >
+        constexpr explicit
+        variant(std::in_place_type_t<T>, std::initializer_list<U> il, Args&&... args)
+        : variant(std::in_place_index_t<index_of<T>>{}, il, std::forward<Args>(args)...)
+        {}
+
+        // 7
+        template <size_t N, class... Args,
+            class T = to_type<N>,
+            class = std::enable_if_t<std::is_constructible<T, Args...>::value>
+        >
+        constexpr explicit
+        variant(std::in_place_index_t<N>, Args&&... args)
+        : base(std::in_place_index_t<N>{}, std::forward<Args>(args)...)
+        {}
+
+        // 8
+        template <size_t N, class U, class... Args,
+            class T = to_type<N>,
+            class = std::enable_if_t<
+                std::is_constructible<T, std::initializer_list<U>&, Args...>::value>
+        >
+        constexpr explicit
+        variant(std::in_place_index_t<N>, std::initializer_list<U> il, Args&&... args)
+        : base(std::in_place_index_t<N>{}, il, std::forward<Args>(args)...)
+        {}
+
+        // Assign operators
+        // https://en.cppreference.com/w/cpp/utility/variant/operator%3D
+
+        // 3
+        template <class T, class U = accepted_type<T&&>>
+        std::enable_if_t<
+            exactly_once<U> &&
+            std::is_constructible<U, T>::value &&
+            std::is_assignable<U&, T>::value,
+            variant&
+        >
+        operator=(T&& rhs) noexcept(
+            std::is_nothrow_assignable<U&, T>::value &&
+            std::is_nothrow_constructible<U, T>::value)
+        {
             constexpr auto idx = accepted_index<T>;
-            if (index_ == idx)
-                get<idx>(*this) = std::forward<T>(t);
+            if (index() == idx)
+                get<idx>(*this) = std::forward<T>(rhs);
             else
-                this->emplace<idx>(std::forward<T>(t));
+                this->emplace<idx>(std::forward<T>(rhs));
             return *this;
         }
 
+        // emplace
         // https://en.cppreference.com/w/cpp/utility/variant/emplace
+
         // 1
         template <class T, class... Args>
-        T& emplace(Args&&... args) {
-            return this->emplace<accepted_index<T>>(std::forward<Args>(args)...);
-        }
-        // 3
-        template <size_t N, class... Args>
-        variant_alternative_t<N, variant>& emplace(Args&&... args) {
-            static_assert(N < sizeof...(Ts),
-                "The index should be in [0, number of alternatives)");
-            this->~variant();
-            ::new (this) variant(std::in_place_index_t<N>{}, std::forward<Args>(args)...);
-            return get<N>(*this);
+        std::enable_if_t<
+            std::is_constructible<T, Args...>::value && exactly_once<T>,
+            T&>
+        emplace(Args&&... args) {
+            return this->emplace<index_of<T>>(std::forward<Args>(args)...);
         }
 
-        // https://en.cppreference.com/w/cpp/utility/variant/index
-        size_t index() const noexcept {
-            return index_;
+        // 2
+        template <class T, class U, class... Args>
+        std::enable_if_t<
+            std::is_constructible<T, std::initializer_list<U>&, Args...>::value &&
+            exactly_once<T>,
+            T&>
+        emplace(std::initializer_list<U> il, Args&&... args) {
+            return this->emplace<index_of<T>>(il, std::forward<Args>(args)...);
+        }
+
+        // 3
+        template <size_t N, class... Args>
+        std::enable_if_t<
+            std::is_constructible<variant_alternative_t<N, variant>, Args...>::value,
+            variant_alternative_t<N, variant>&>
+        emplace(Args&&... args) {
+            static_assert(N < sizeof...(Ts),
+                "The index should be in [0, number of alternatives)");
+            // Provide the strong exception-safety guarantee when possible,
+            // to avoid becoming valueless
+
+            // This construction might throw
+            variant tmp(std::in_place_index_t<N>{}, std::forward<Args>(args)...);
+            // But this step won't
+            *this = std::move(tmp);
+
+            return std::get<N>(*this);
+        }
+
+        // 4
+        template <size_t N, class U, class... Args>
+        std::enable_if_t<
+            std::is_constructible<
+                variant_alternative_t<N, variant>, std::initializer_list<U>&, Args...
+            >::value,
+            variant_alternative_t<N, variant>&>
+        emplace(std::initializer_list<U> il, Args&&... args) {
+            return this->emplace<N>(il, std::forward<Args>(args)...);
+        }
+
+        // Returns the zero-based index of the alternative held by the variant
+        constexpr size_t index() const noexcept {
+            return this->index_;
         }
 
         // Returns false if and only if the variant holds a value
         constexpr bool valueless_by_exception() const noexcept {
-            return index_ == variant_npos;
+            return this->index_ == variant_npos;
         }
     };
 
-    template <size_t N, class Variant>
-    constexpr decltype(auto) get(Variant&& v) {
-        return get(std::in_place_index_t<N>{}, std::forward<Variant>(v).union_);
-    }
-
-    #if 0
+    // get
     template <size_t N, class... Ts>
     constexpr variant_alternative_t<N, variant<Ts...>>&
-    get(variant<Ts...>&);
+    get(variant<Ts...>& v) {
+        static_assert(N < sizeof...(Ts),
+            "The index must be in [0, number of alternatives)");
+        if (v.index() != N)
+            throw_bad_variant_access(v.valueless_by_exception());
+        return variant_detail::get<N>(v);
+    }
 
     template <size_t N, class... Ts>
     constexpr variant_alternative_t<N, variant<Ts...>>&&
-    get(variant<Ts...>&&);
+    get(variant<Ts...>&& v) {
+        static_assert(N < sizeof...(Ts),
+            "The index must be in [0, number of alternatives)");
+        if (v.index() != N)
+            throw_bad_variant_access(v.valueless_by_exception());
+        return variant_detail::get<N>(std::move(v));
+    }
 
     template <size_t N, class... Ts>
     constexpr variant_alternative_t<N, variant<Ts...>> const&
-    get(const variant<Ts...>&);
+    get(const variant<Ts...>& v) {
+        static_assert(N < sizeof...(Ts),
+            "The index must be in [0, number of alternatives)");
+        if (v.index() != N)
+            throw_bad_variant_access(v.valueless_by_exception());
+        return variant_detail::get<N>(v);
+    }
 
     template <size_t N, class... Ts>
     constexpr variant_alternative_t<N, variant<Ts...>> const&&
-    get(const variant<Ts...>&&);
-    #endif
+    get(const variant<Ts...>&& v) {
+        static_assert(N < sizeof...(Ts),
+            "The index must be in [0, number of alternatives)");
+        if (v.index() != N)
+            throw_bad_variant_access(v.valueless_by_exception());
+        return variant_detail::get<N>(std::move(v));
+    }
 
-    // Should inherit from std::exception, but for shorter version...
-    using bad_variant_access = std::runtime_error;
+    // TODO fix me
 
     // Visitor details
     namespace detail
@@ -368,7 +659,7 @@ namespace std
     constexpr void visit(Visitor&& visitor, Variant&& var, std::index_sequence<I...>)
     {
         if (var.valueless_by_exception())
-            throw bad_variant_access("Unexpected index");
+            throw_bad_variant_access("Unexpected index");
 
         constexpr void (*vtable[])(Visitor&& visitor, Variant&& var) = {
             &detail::visit_invoke<I, Visitor, Variant>...

@@ -4,7 +4,6 @@
 int main()
 {
     std::variant<int, float, double, std::string> v = "hej";
-    //variant<int, float, double, std::string> v;
 
     static_assert(std::is_same<int&, decltype(std::get<0>(v))>::value);
     static_assert(std::is_same<float&, decltype(std::get<1>(v))>::value);
@@ -31,5 +30,12 @@ int main()
     int i = 2;
     std::variant<int> y = i;
     std::cout << "y index: " << y.index() << '\n';
+
+    // Test valueless
+    std::variant<int, float, double, std::string> v2;
+    std::cout << "valueless: " << v2.valueless_by_exception() << '\n';
+
+    v2 = 42;
+    std::cout << v2.index() << '\n';
 }
 
