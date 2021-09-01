@@ -9,6 +9,41 @@
 
 namespace std
 {
+    namespace expected_detail
+    {
+        template <class T, bool = std::is_trivially_destructible<T>::value>
+        struct destroyer
+        { void operator()(void*) {} };
+
+        template <class T>
+        struct destroyer<T, false>
+        { void operator()(void* ptr) { std::destroy_at((T*)ptr); } };
+
+        #if 0
+        // uninitialized<T> is guaranteed to be a trivially destructible type,
+        // even if T is not
+        template <class T>
+        struct uninitialized
+        {
+            template <class... Args>
+            constexpr void create(Args&&... args)
+            { ::new (storage_) T(std::forward<Args>(args)...); }
+
+            constexpr void destroy() { destroyer<T>{}(storage_); }
+            //{ B || std::destroy_at((T*)storage_); }
+
+            const T& get() const & noexcept { return *(T*)storage_; }
+            T& get() & noexcept { return *(T*)storage_; }
+
+            const T&& get() const && noexcept { return std::move(*(T*)storage_); }
+            T&& get() && noexcept { return std::move(*(T*)storage_); }
+
+            unsigned char storage_[sizeof(T)];
+        };
+        #endif
+
+    } // namespace expected_detail
+
     template <class E>
     struct not_expected
     {
@@ -58,7 +93,7 @@ namespace std
         template <class T>
         using not_self = std::negation<std::is_same<std::decay_t<T>, expected>>;
 
-        // Create type T without destroying storage
+        // Replace storage with type T without destroying storage
         template <class T, class... Args>
         void create(Args&&... args)
         {
@@ -70,11 +105,11 @@ namespace std
         void destroy()
         {
             if (has_value_) {
-                std::destroy_at((value_type*)storage_);
+                expected_detail::destroyer<value_type>{}(storage_);
                 has_value_ = false;
             }
             else
-                std::destroy_at((unexpected_type*)storage_);
+                expected_detail::destroyer<unexpected_type>{}(storage_);
         }
 
     public:
