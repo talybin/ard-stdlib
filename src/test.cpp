@@ -1,4 +1,5 @@
 #include "variant.hpp"
+#include "expected.hpp"
 #include <iostream>
 
 
@@ -21,6 +22,16 @@ int main()
     //std::get<9>(v);
     //std::get<1>(v);
     //std::get<0>(v);
+
+    // https://github.com/TartanLlama/expected/blob/master/include/tl/expected.hpp
+    // https://github.com/martinmoene/expected-lite/blob/master/include/nonstd/expected.hpp
+    #if 0
+    ard::expected<int, std::exception> r = ard::get<0>(v);
+    if (r)
+        std::cout << r.value() << '\n';
+    else
+        r.error().what()
+    #endif
 
     std::cout << "cur index after: " << v.index() << '\n';
     std::cout << "value after: " << std::get<1>(v) << '\n';
@@ -90,5 +101,7 @@ int main()
 
     static_assert(std::is_same<
         decltype(std::visit(f5, std::variant<int>{0})), int&&>::value);
+
+    std::expected<int, double> e;
 }
 
