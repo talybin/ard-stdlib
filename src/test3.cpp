@@ -5,9 +5,15 @@
 #include <functional>
 #include <cassert>
 
+using Ref = std::reference_wrapper<std::vector<int>>;
+std::ostream& operator<<(std::ostream& os, const Ref& value)
+{
+    os << "ref";
+    return os;
+}
+
 int main()
 {
-    using Ref = std::reference_wrapper<std::vector<int>>;
     using test_variant = std::variant<int, Ref, std::string>;
 
     test_variant v1;
@@ -19,6 +25,14 @@ int main()
 
     test_variant v4 = "test";
     assert(v4.index() == 2);
+
+    std::visit([](auto v) {
+        std::cout << "---> visited copy: " << v << '\n';
+    }, v4);
+
+    std::visit([](auto&& v) {
+        std::cout << "---> visited move: " << v << '\n';
+    }, std::move(v4));
 
     std::vector<int> vec { 42 };
     test_variant v5 = vec;

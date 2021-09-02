@@ -99,10 +99,36 @@ namespace std
 
             // External getter
             template <size_t _Np, class _Variant>
-            constexpr decltype(auto) get(_Variant&& __variant) {
+            constexpr decltype(auto) __get_value(_Variant&& __variant) {
                 if (__variant.index() != _Np)
                     std::abort();
                 return std::forward<_Variant>(__variant).template get<_Np>();
+            }
+
+            // visit invoker
+            template <size_t _Np, class _Visitor, class _Variant>
+            constexpr decltype(auto)
+            __visit_impl(_Visitor&& __visitor, _Variant&& __variant) {
+                return std::forward<_Visitor>(__visitor)(
+                    __get_value<_Np>(std::forward<_Variant>(__variant)));
+            }
+
+            // Visitor implementation
+            template <class _Visitor, class _Variant, size_t... _Ind>
+            constexpr decltype(auto)
+            __visit_impl(
+                _Visitor&& __visitor, _Variant&& __variant, std::index_sequence<_Ind...>)
+            {
+                if (__variant.valueless_by_exception())
+                    std::abort();
+                    //throw_bad_variant_access("visit: variant is valueless");
+
+                using _Ret = decltype(__visitor(__get_value<0>(std::declval<_Variant>())));
+                constexpr _Ret (*__vtable[])(_Visitor&&, _Variant&&) = {
+                    &__visit_impl<_Ind, _Visitor, _Variant>...
+                };
+                return __vtable[__variant.index()](
+                    std::forward<_Visitor>(__visitor), std::forward<_Variant>(__variant));
             }
 
         } // namespace __variant
@@ -145,7 +171,8 @@ namespace std
         template <size_t _Np, class _Tp = __to_type<_Np>, class... _Args>
         constexpr void
         _construct(_Args&&... __args)
-        noexcept(std::is_nothrow_constructible<_Tp, _Args...>::value) {
+        noexcept(std::is_nothrow_constructible<_Tp, _Args...>::value)
+        {
             ::new (_storage) _Tp(std::forward<_Args>(__args)...);
             _index = _Np;
         }
@@ -165,7 +192,7 @@ namespace std
 
         // External getter
         template <size_t, class _Variant>
-        friend constexpr decltype(auto) __detail::__variant::get(_Variant&&);
+        friend constexpr decltype(auto) __detail::__variant::__get_value(_Variant&&);
 
         // Value holder (union)
         unsigned char _storage[std::max({ sizeof(_Types)... })];
@@ -247,22 +274,22 @@ namespace std
     template <size_t _Np, class... _Types>
     constexpr variant_alternative_t<_Np, variant<_Types...>>&
     get(variant<_Types...>& __v)
-    { return __detail::__variant::get<_Np>(__v); }
+    { return __detail::__variant::__get_value<_Np>(__v); }
 
     template <size_t _Np, class... _Types>
     constexpr variant_alternative_t<_Np, variant<_Types...>>&&
     get(variant<_Types...>&& __v)
-    { return __detail::__variant::get<_Np>(std::move(__v)); }
+    { return __detail::__variant::__get_value<_Np>(std::move(__v)); }
 
     template <size_t _Np, class... _Types>
     constexpr variant_alternative_t<_Np, variant<_Types...>> const&
     get(const variant<_Types...>& __v)
-    { return __detail::__variant::get<_Np>(__v); }
+    { return __detail::__variant::__get_value<_Np>(__v); }
 
     template <size_t _Np, class... _Types>
     constexpr variant_alternative_t<_Np, variant<_Types...>> const&&
     get(const variant<_Types...>&& __v)
-    { return __detail::__variant::get<_Np>(std::move(__v)); }
+    { return __detail::__variant::__get_value<_Np>(std::move(__v)); }
 
     // get
     // 2
@@ -286,61 +313,26 @@ namespace std
     get(const std::variant<_Types...>&& __v)
     { return get<__detail::__variant::__index_of<_Tp, _Types...>::value>(std::move(__v)); }
 
-    // detail
-    namespace __detail {
-        namespace __variant
-        {
-            // visit invoker
-            template <size_t _Np, class _Visitor, class _Variant>
-            inline decltype(auto)
-            __visit_impl(_Visitor&& __visitor, _Variant&& __variant) {
-                return std::forward<_Visitor>(__visitor)(
-                    get<_Np>(std::forward<_Variant>(__variant)));
-            }
-
-            // Visitor implementation
-            template <class _Visitor, class _Variant, size_t... _Ind>
-            constexpr decltype(auto)
-            __visit_impl(
-                _Visitor&& __visitor, _Variant&& __variant, std::index_sequence<_Ind...>)
-            {
-                // TODO fix me
-                #if 0
-                //if (var.valueless_by_exception())
-                //    throw_bad_variant_access("visit: variant is valueless");
-
-                using _Ret = decltype(__visitor(std::get<0>(std::declval<_Variant>())));
-                constexpr _Ret (*__vtable[])(_Visitor&&, _Variant&&) = {
-                    &__visit_impl<_Ind, _Visitor, _Variant>...
-                };
-                return __vtable[__variant.index()](
-                    std::forward<_Visitor>(__visitor), std::forward<_Variant>(__variant));
-                #endif
-            }
-
-        } // namespace __variant
-    } // namespace __detail
-
     // visit
     // Support only one variant for now
     template <class _Visitor, class _Variant>
     constexpr decltype(auto)
     visit(_Visitor&& __visitor, _Variant&& __variant)
     {
-        using _Tp = std::remove_reference_t<_Variant>;
+        using _Vp = std::remove_reference_t<_Variant>;
         return __detail::__variant::__visit_impl(
             std::forward<_Visitor>(__visitor),
             std::forward<_Variant>(__variant),
-            std::make_index_sequence<variant_size<_Tp>::value>{});
+            std::make_index_sequence<variant_size<_Vp>::value>{});
     }
 
-    // Counstructors
+    // Constructors
     // 2
     template <class... _Types>
     constexpr
     variant<_Types...>::variant(const variant<_Types...>& __other) 
     {
-        // TODO use __raw_idx_visit instead
+        // TODO use __raw_idx_visit instead to get exact type and for noexcept(...)
         if (!__other.valueless_by_exception()) {
             visit([this](const auto& arg) {
                 using _Tp = decltype(arg);
@@ -356,7 +348,7 @@ namespace std
     {
         if (!__other.valueless_by_exception()) {
             visit([this](auto&& arg) {
-                using _Tp = decltype(arg);
+                using _Tp = std::remove_reference_t<decltype(arg)>;
                 _construct<__index_of<_Tp>, _Tp>(std::move(arg));
             }, std::move(__other));
         }
