@@ -22,6 +22,8 @@ int main()
     int i1 = 0;
 
     test_variant v3 = i1;
+    test_variant v3_copy(v3);
+    test_variant v3_move(std::move(v3));
 
     test_variant v4 = "test";
     assert(v4.index() == 2);
