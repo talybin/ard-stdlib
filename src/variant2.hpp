@@ -17,6 +17,7 @@
 
 #include "type_traits.hpp"
 #include "utility.hpp"
+#include "memory.hpp"
 
 namespace std
 {
@@ -45,6 +46,9 @@ namespace std
     template <size_t _Np, class _Variant>
     using variant_alternative_t = typename variant_alternative<_Np, _Variant>::type;
 
+    // monostate
+    struct monostate {};
+
     // detail
     namespace __detail {
         namespace __variant
@@ -58,6 +62,20 @@ namespace std
             struct __index_of<_Tp, _First, _Rest...> : std::integral_constant<
                 size_t,
                 std::is_same<_Tp, _First>::value ? 0 : __index_of<_Tp, _Rest...>::value + 1> {};
+
+            // How many times does T appear in type sequence?
+            template <class _Tp, class... _Types>
+            struct __type_count : std::integral_constant<size_t, 0> {};
+
+            template <class _Tp, class _First, class... _Rest>
+            struct __type_count<_Tp, _First, _Rest...> : std::integral_constant<
+                size_t,
+                __type_count<_Tp, _Rest...>::value + std::is_same<_Tp, _First>::value> {};
+
+            // __exactly_once
+            template <class _Tp, class... _Types>
+            struct __exactly_once
+            : std::bool_constant<__type_count<_Tp, _Types...>::value == 1> {};
 
             // Takes _Types and create an indexed overloaded _fun for each type.
             // If a type appears more than once in _Types, create only one overload.
@@ -99,10 +117,16 @@ namespace std
 
             // External getter
             template <size_t _Np, class _Variant>
-            constexpr decltype(auto) __get_value(_Variant&& __variant) {
+            constexpr decltype(auto)
+            __raw_get(_Variant&& __variant)
+            { return std::forward<_Variant>(__variant).template get<_Np>(); }
+
+            template <size_t _Np, class _Variant>
+            constexpr decltype(auto)
+            __get(_Variant&& __variant) {
                 if (__variant.index() != _Np)
                     std::abort();
-                return std::forward<_Variant>(__variant).template get<_Np>();
+                return __raw_get<_Np>(std::forward<_Variant>(__variant));
             }
 
             // Raw index visitor
@@ -133,6 +157,19 @@ namespace std
                     std::forward<_Visitor>(__visitor),
                     std::make_index_sequence<sizeof...(_Types)>{});
             }
+
+            // Destroy non-trivially destructible type
+            template <class _Tp, bool = std::is_trivially_destructible<_Tp>::value>
+            struct __destroy
+            { constexpr void operator()(_Tp*) const noexcept {} };
+
+            template <class _Tp>
+            struct __destroy<_Tp, false> {
+                constexpr void operator()(_Tp* __object_ptr) const
+                noexcept(std::is_nothrow_destructible<_Tp>::value) {
+                    std::destroy_at(__object_ptr);
+                }
+            };
 
         } // namespace __variant
     } // namespace __detail
@@ -167,6 +204,10 @@ namespace std
             __detail::__variant::__index_of<_Tp, _Types...>::value;
 
         template <class _Tp>
+        static constexpr bool __exactly_once =
+            __detail::__variant::__exactly_once<_Tp, _Types...>::value;
+
+        template <class _Tp>
         static constexpr bool __not_in_place_tag =
            !__detail::__variant::__is_in_place_tag<std::decay_t<_Tp>>::value;
 
@@ -174,10 +215,21 @@ namespace std
         template <size_t _Np, class _Tp = __to_type<_Np>, class... _Args>
         constexpr void
         _construct(_Args&&... __args)
-        noexcept(std::is_nothrow_constructible<_Tp, _Args...>::value)
-        {
+        noexcept(std::is_nothrow_constructible<_Tp, _Args...>::value) {
             ::new (_storage) _Tp(std::forward<_Args>(__args)...);
             _index = _Np;
+        }
+
+        // Destruct if no valueless
+        constexpr void
+        _destruct() {
+            if (_index != variant_npos) {
+                __detail::__variant::__raw_idx_visit([this](auto _Np) {
+                    using _Tp = __to_type<_Np>;
+                    __detail::__variant::__destroy<_Tp>{}((_Tp*)_storage);
+                }, *this);
+                _index = variant_npos;
+            }
         }
 
         // Raw getters
@@ -195,7 +247,7 @@ namespace std
 
         // External getter
         template <size_t, class _Variant>
-        friend constexpr decltype(auto) __detail::__variant::__get_value(_Variant&&);
+        friend constexpr decltype(auto) __detail::__variant::__raw_get(_Variant&&);
 
         // Value holder (union)
         unsigned char _storage[std::max({ sizeof(_Types)... })];
@@ -214,7 +266,8 @@ namespace std
         template <class _Tp,
             class = std::enable_if_t<__not_in_place_tag<_Tp>>,
             class _Tj = __accepted_type<_Tp&&>,
-            class = std::enable_if_t<std::is_constructible<_Tj, _Tp>::value>
+            class = std::enable_if_t<__exactly_once<_Tj> &&
+                std::is_constructible<_Tj, _Tp>::value>
         >
         constexpr
         variant(_Tp&& __t)
@@ -224,7 +277,8 @@ namespace std
 
         // 5
         template <class _Tp, class... _Args,
-            class = std::enable_if_t<std::is_constructible<_Tp, _Args...>::value>
+            class = std::enable_if_t<__exactly_once<_Tp> &&
+                std::is_constructible<_Tp, _Args...>::value>
         >
         constexpr explicit
         variant(std::in_place_type_t<_Tp>, _Args&&... __args)
@@ -233,7 +287,7 @@ namespace std
 
         // 6
         template <class _Tp, class _Up, class... _Args,
-            class = std::enable_if_t<
+            class = std::enable_if_t<__exactly_once<_Tp> &&
                 std::is_constructible<_Tp, std::initializer_list<_Up>&, _Args...>::value>
         >
         constexpr explicit
@@ -263,6 +317,38 @@ namespace std
             std::initializer_list<_Up> __il, _Args&&... __args)
         { _construct<_Np, _Tp>(__il, std::forward<_Args>(__args)...); }
 
+        // Destructor
+        ~variant()
+        { _destruct(); }
+
+        // Assignments
+        // 1
+        constexpr variant& operator=(const variant& __rhs);
+        // 2
+        constexpr variant& operator=(variant&& __rhs);
+
+        // 3
+        template <class _Tp,
+            size_t _Np = __accepted_index<_Tp&&>,
+            class _Tj = __to_type<_Np>,
+            class = std::enable_if_t<__exactly_once<_Tj> &&
+                std::is_constructible<_Tj, _Tp>::value &&
+                std::is_assignable<_Tj&, _Tp>::value>
+        >
+        constexpr variant&
+        operator=(_Tp&& __rhs)
+        noexcept(std::is_nothrow_assignable<_Tj&, _Tp>::value &&
+            std::is_nothrow_constructible<_Tj, _Tp>::value)
+        {
+            if (_index == _Np)
+                this->get<_Np, _Tj>() = std::forward<_Tp>(__rhs);
+            else {
+                _destruct();
+                _construct<_Np, _Tj>(std::forward<_Tp>(__rhs));
+            }
+            return *this;
+        }
+
         // Returns the zero-based index of the alternative held by the variant
         constexpr size_t index() const noexcept
         { return _index; }
@@ -277,44 +363,91 @@ namespace std
     template <size_t _Np, class... _Types>
     constexpr variant_alternative_t<_Np, variant<_Types...>>&
     get(variant<_Types...>& __v)
-    { return __detail::__variant::__get_value<_Np>(__v); }
+    { return __detail::__variant::__get<_Np>(__v); }
 
     template <size_t _Np, class... _Types>
     constexpr variant_alternative_t<_Np, variant<_Types...>>&&
     get(variant<_Types...>&& __v)
-    { return __detail::__variant::__get_value<_Np>(std::move(__v)); }
+    { return __detail::__variant::__get<_Np>(std::move(__v)); }
 
     template <size_t _Np, class... _Types>
     constexpr variant_alternative_t<_Np, variant<_Types...>> const&
     get(const variant<_Types...>& __v)
-    { return __detail::__variant::__get_value<_Np>(__v); }
+    { return __detail::__variant::__get<_Np>(__v); }
 
     template <size_t _Np, class... _Types>
     constexpr variant_alternative_t<_Np, variant<_Types...>> const&&
     get(const variant<_Types...>&& __v)
-    { return __detail::__variant::__get_value<_Np>(std::move(__v)); }
+    { return __detail::__variant::__get<_Np>(std::move(__v)); }
 
     // get
     // 2
     template <class _Tp, class... _Types>
     constexpr _Tp&
-    get(std::variant<_Types...>& __v)
-    { return get<__detail::__variant::__index_of<_Tp, _Types...>::value>(__v); }
+    get(std::variant<_Types...>& __v) {
+        static_assert(__detail::__variant::__exactly_once<_Tp, _Types...>::value,
+            "_Tp must occur exactly once in alternatives");
+        return get<__detail::__variant::__index_of<_Tp, _Types...>::value>(__v);
+    }
 
     template <class _Tp, class... _Types>
     constexpr _Tp&&
-    get(std::variant<_Types...>&& __v)
-    { return get<__detail::__variant::__index_of<_Tp, _Types...>::value>(std::move(__v)); }
+    get(std::variant<_Types...>&& __v) {
+        static_assert(__detail::__variant::__exactly_once<_Tp, _Types...>::value,
+            "_Tp must occur exactly once in alternatives");
+        return get<__detail::__variant::__index_of<_Tp, _Types...>::value>(std::move(__v));
+    }
 
     template <class _Tp, class... _Types>
     constexpr const _Tp&
-    get(const std::variant<_Types...>& __v)
-    { return get<__detail::__variant::__index_of<_Tp, _Types...>::value>(__v); }
+    get(const std::variant<_Types...>& __v) {
+        static_assert(__detail::__variant::__exactly_once<_Tp, _Types...>::value,
+            "_Tp must occur exactly once in alternatives");
+        return get<__detail::__variant::__index_of<_Tp, _Types...>::value>(__v);
+    }
 
     template <class _Tp, class... _Types>
     constexpr const _Tp&&
-    get(const std::variant<_Types...>&& __v)
-    { return get<__detail::__variant::__index_of<_Tp, _Types...>::value>(std::move(__v)); }
+    get(const std::variant<_Types...>&& __v) {
+        static_assert(__detail::__variant::__exactly_once<_Tp, _Types...>::value,
+            "_Tp must occur exactly once in alternatives");
+        return get<__detail::__variant::__index_of<_Tp, _Types...>::value>(std::move(__v));
+    }
+
+    // get_if
+    // 1
+    template <size_t _Np, class... _Types>
+    constexpr std::add_pointer_t<variant_alternative_t<_Np, variant<_Types...>>>
+    get_if(variant<_Types...>* __ptr) noexcept {
+        if (__ptr && __ptr->index() == _Np)
+            return std::addressof(__detail::__variant::__raw_get<_Np>(*__ptr));
+        return nullptr;
+    }
+
+    template <size_t _Np, class... _Types>
+    constexpr std::add_pointer_t<const variant_alternative_t<_Np, variant<_Types...>>>
+    get_if(const variant<_Types...>* __ptr) noexcept {
+        if (__ptr && __ptr->index() == _Np)
+            return std::addressof(__detail::__variant::__raw_get<_Np>(*__ptr));
+        return nullptr;
+    }
+
+    // 2
+    template <class _Tp, class... _Types>
+    constexpr add_pointer_t<_Tp>
+    get_if(variant<_Types...>* __ptr) noexcept {
+        static_assert(__detail::__variant::__exactly_once<_Tp, _Types...>::value,
+            "_Tp must occur exactly once in alternatives");
+        return get_if<__detail::__variant::__index_of<_Tp, _Types...>::value>(__ptr);
+    }
+
+    template <class _Tp, class... _Types>
+    constexpr add_pointer_t<const _Tp>
+    get_if(const variant<_Types...>* __ptr) noexcept {
+        static_assert(__detail::__variant::__exactly_once<_Tp, _Types...>::value,
+            "_Tp must occur exactly once in alternatives");
+        return get_if<__detail::__variant::__index_of<_Tp, _Types...>::value>(__ptr);
+    }
 
     // visit
     // Support only one variant for now
@@ -322,10 +455,13 @@ namespace std
     constexpr decltype(auto)
     visit(_Visitor&& __visitor, _Variant&& __variant)
     {
+        if (__variant.valueless_by_exception())
+            std::abort();
+
         return __detail::__variant::__raw_idx_visit(
             [&](auto _Np) {
                 return std::forward<_Visitor>(__visitor)(
-                    get<_Np>(std::forward<_Variant>(__variant)));
+                    __detail::__variant::__raw_get<_Np>(std::forward<_Variant>(__variant)));
             },
             std::forward<_Variant>(__variant));
     }
@@ -357,6 +493,65 @@ namespace std
                 },
                 __other);
         }
+    }
+
+    // Assignments
+    // 1
+    template <class... _Types>
+    constexpr variant<_Types...>&
+    variant<_Types...>::operator=(const variant<_Types...>& __rhs)
+    {
+        // Note, _destruct will destroy value only if not valueless
+        if (__rhs.valueless_by_exception()) {
+            // If both *this and rhs are valueless by exception, do nothing.
+            // Otherwise, if rhs is valueless, but *this is not, destroy
+            // the value contained in *this and makes it valueless.
+            _destruct();
+        }
+        else { // rhs contains a value
+            __detail::__variant::__raw_idx_visit(
+                [this, &__rhs](auto _Np) {
+                    // If rhs holds the same alternative as *this, assign the
+                    // value contained in rhs to the value contained in *this
+                    if (__rhs.index() == index())
+                        this->get<_Np>() = __rhs.template get<_Np>();
+                    else {
+                        // rhs and *this has different index
+                        // TODO if _construct or get throws, *this will be in
+                        //      invalid state
+                        _destruct();
+                        _construct<_Np>(__rhs.template get<_Np>());
+                    }
+                },
+                __rhs);
+        }
+        return *this;
+    }
+
+    // 2
+    template <class... _Types>
+    constexpr variant<_Types...>&
+    variant<_Types...>::operator=(variant<_Types...>&& __rhs)
+    {
+        // Same as copy assignment but moves in value
+        if (__rhs.valueless_by_exception())
+            _destruct();
+        else { // rhs contains a value
+            __detail::__variant::__raw_idx_visit(
+                [this, &__rhs](auto _Np) {
+                    if (__rhs.index() == index())
+                        this->get<_Np>() = std::move(__rhs).template get<_Np>();
+                    else {
+                        // rhs and *this has different index
+                        // TODO if _construct or get throws, *this will be in
+                        //      invalid state
+                        _destruct();
+                        _construct<_Np>(std::move(__rhs).template get<_Np>());
+                    }
+                },
+                __rhs);
+        }
+        return *this;
     }
 
 } // namespace std

@@ -25,6 +25,11 @@ int main()
     test_variant v3_copy(v3);
     test_variant v3_move(std::move(v3));
 
+    // Test assignment
+    v2 = v3_copy;
+    v2 = v1;
+    v2 = std::move(v3_copy);
+
     test_variant v4 = "test";
     assert(v4.index() == 2);
 
