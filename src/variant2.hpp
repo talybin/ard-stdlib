@@ -265,9 +265,9 @@ namespace std
         // 1
         constexpr variant() = default;
         // 2
-        constexpr variant(const variant& __other);
+        constexpr variant(const variant& __rhs);
         // 3
-        constexpr variant(variant&& __other);
+        constexpr variant(variant&& __rhs);
 
         // 4
         template <class _Tp,
@@ -498,6 +498,15 @@ namespace std
         return get_if<__detail::__variant::__index_of<_Tp, _Types...>::value>(__ptr);
     }
 
+    // holds_alternative
+    template <class _Tp, class... _Types>
+    constexpr bool
+    holds_alternative(const std::variant<_Types...>& __v) {
+        static_assert(__detail::__variant::__exactly_once<_Tp, _Types...>::value,
+            "_Tp must occur exactly once in alternatives");
+        return __v.index() == __detail::__variant::__index_of<_Tp, _Types...>::value;
+    }
+
     // visit
     // Support only one variant for now
     template <class _Visitor, class _Variant>
@@ -519,28 +528,28 @@ namespace std
     // 2
     template <class... _Types>
     constexpr
-    variant<_Types...>::variant(const variant<_Types...>& __other) 
+    variant<_Types...>::variant(const variant<_Types...>& __rhs)
     {
-        if (!__other.valueless_by_exception()) {
+        if (!__rhs.valueless_by_exception()) {
             __detail::__variant::__raw_idx_visit(
-                [this, &__other](auto _Np) {
-                    _construct<_Np>(__other.template _get<_Np>());
+                [this, &__rhs](auto _Np) {
+                    _construct<_Np>(__rhs.template _get<_Np>());
                 },
-                __other);
+                __rhs);
         }
     }
 
     // 3
     template <class... _Types>
     constexpr
-    variant<_Types...>::variant(variant<_Types...>&& __other)
+    variant<_Types...>::variant(variant<_Types...>&& __rhs)
     {
-        if (!__other.valueless_by_exception()) {
+        if (!__rhs.valueless_by_exception()) {
             __detail::__variant::__raw_idx_visit(
-                [this, &__other](auto _Np) {
-                    _construct<_Np>(std::move(__other).template _get<_Np>());
+                [this, &__rhs](auto _Np) {
+                    _construct<_Np>(std::move(__rhs).template _get<_Np>());
                 },
-                __other);
+                __rhs);
         }
     }
 
@@ -604,48 +613,66 @@ namespace std
     constexpr void
     variant<_Types...>::swap(variant<_Types...>& __rhs)
     {
-        // Note! Just swapping _storage and _index do not always work (ex.
-        // std::string, seems to hold internal pointer to it self).
+        // If both *this and rhs are valueless by exception, do nothing.
         if (valueless_by_exception() && __rhs.valueless_by_exception())
             return;
-
-        __detail::__variant::__raw_idx_visit([this, &__rhs](auto __rhs_index) {
-        },
-        __rhs);
-
-#if 0
-        __detail::__variant::__raw_idx_visit([this, &__rhs](auto __thisI) {
-            __detail::__variant::__raw_idx_visit([this, &__rhs](auto __rhsI)
-            {
-                
-                if (__rhs._index == _index) {
-                    
-                }
-            },
-            __rhs);
-        },
-        *this);        
-
-        __detail::__variant::__raw_idx_visit(
-            [this, &__rhs](auto _Np) {
-                if (
-            },
-            __rhs);
-
-        // If both *this and rhs are valueless by exception, do nothing.
-        // Otherwise, if both *this and rhs hold the same alternative, call
-        // swap(std::get<i>(*this), std::get<i>(rhs)) where i is index().
-        if (__rhs._index == _index) {
-            if (!valueless_by_exception())
-               std::swap(_storage, __rhs._storage);
-        }
-        // Otherwise, exchange values of rhs and *this.
-        else {
-            std::swap(_storage, __rhs._storage);
-            std::swap(_index, __rhs._index);
-        }
-#endif
+        // Note! Just swapping _storage and _index do not always work.
+        // Ex. std::string that hold a pointer to internal buffer (small
+        // string optimization) and will still point to old buffer.
+        // Now we could visit both indexes here, but it would be almost
+        // the same code as traditional swap. So do traditional one.
+        variant _tmp(std::move(__rhs));
+        __rhs = std::move(*this);
+        *this = std::move(_tmp);
     }
+
+    template <class... _Types>
+    inline std::enable_if_t<
+        std::conjunction<std::is_move_constructible<_Types>...>::value &&
+        std::conjunction<std::is_swappable<_Types>...>::value
+    >
+    swap(variant<_Types...>& __lhs, variant<_Types...>& __rhs)
+    { __lhs.swap(__rhs); }
+
+    template <class... _Types>
+    std::enable_if_t<!(
+        std::conjunction<std::is_move_constructible<_Types>...>::value &&
+        std::conjunction<std::is_swappable<_Types>...>::value)
+    >
+    swap(variant<_Types...>&, variant<_Types...>&) = delete;
+
+    // Relation operators
+    constexpr bool operator==(monostate, monostate) { return true;  }
+    constexpr bool operator!=(monostate, monostate) { return false; }
+    constexpr bool operator< (monostate, monostate) { return false; }
+    constexpr bool operator> (monostate, monostate) { return false; }
+    constexpr bool operator<=(monostate, monostate) { return true;  }
+    constexpr bool operator>=(monostate, monostate) { return true;  }
+
+#define _VARIANT_RELATION_FUNCTION_TEMPLATE(__OP, __NAME) \
+    template <class... _Types> \
+    constexpr bool operator __OP( \
+        const std::variant<_Types...>& __lhs, const std::variant<_Types...>& __rhs) \
+    { \
+        if (__lhs.index() != __rhs.index()) \
+            return false; \
+        if (__lhs.valueless_by_exception()) \
+            return true; \
+        return __detail::__variant::__raw_idx_visit( \
+            [&](auto _Np) { \
+                return __detail::__variant::__raw_get<_Np>(__lhs) \
+                  __OP __detail::__variant::__raw_get<_Np>(__rhs); \
+            }, __rhs); \
+    }
+
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(<, less)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(<=, less_equal)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(==, equal)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(!=, not_equal)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(>=, greater_equal)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(>, greater)
+
+#undef _VARIANT_RELATION_FUNCTION_TEMPLATE
 
 } // namespace std
 

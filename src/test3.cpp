@@ -12,9 +12,14 @@ std::ostream& operator<<(std::ostream& os, const Ref& value)
     return os;
 }
 
+namespace std {
+    bool operator==(const Ref&, const Ref&) { return true; }
+}
+
 int main()
 {
     using test_variant = std::variant<int, Ref, std::string>;
+    //using test_variant = std::variant<int, std::string>;
 
     test_variant v1;
     test_variant v2 = 42;
@@ -22,6 +27,12 @@ int main()
     int i1 = 0;
 
     test_variant v3 = i1;
+
+    std::cout << "v1 == v2 (should be 0): " << (v1 == v2) << '\n';
+    std::cout << "v2 == v3 (should be 0): " << (v2 == v3) << '\n';
+    v1 = 42;
+    std::cout << "v1 == v2 (should be 1): " << (v1 == v2) << '\n';
+
     test_variant v3_copy(v3);
     test_variant v3_move(std::move(v3));
 
@@ -72,5 +83,8 @@ int main()
     std::visit([](auto& v) {
         std::cout << "---> swap v6: " << v << " (should be: hello)\n";
     }, v6);
+
+    std::cout << "v4 holds int: " << std::holds_alternative<int>(v4) << '\n';
+    std::cout << "v4 holds string: " << std::holds_alternative<std::string>(v4) << '\n';
 }
 
