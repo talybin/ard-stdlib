@@ -1,9 +1,15 @@
 /*
- * Implementation of std::variant for Arduino
+ * Implementation of std::variant for Arduino.
+ *
+ * Note! Since Arduino has exceptions disabled the implementation
+ * become much simpler. All noexcept flags removed and no actions
+ * (in case exception throws) for invalid state applied.
+ * In case of invalid operation (like getting value of valueless
+ * variant) the program will abort (call std::abort()).
  *
  * Features:
- *   - Works with C++14
- *   - Does not instantiate objects before assigning
+ *   - Works with C++14.
+ *   - Does not instantiate objects before assigning (stdlib do).
  */
 
 #pragma once
@@ -119,7 +125,7 @@ namespace std
             template <size_t _Np, class _Variant>
             constexpr decltype(auto)
             __raw_get(_Variant&& __variant)
-            { return std::forward<_Variant>(__variant).template get<_Np>(); }
+            { return std::forward<_Variant>(__variant).template _get<_Np>(); }
 
             template <size_t _Np, class _Variant>
             constexpr decltype(auto)
@@ -161,14 +167,12 @@ namespace std
             // Destroy non-trivially destructible type
             template <class _Tp, bool = std::is_trivially_destructible<_Tp>::value>
             struct __destroy
-            { constexpr void operator()(_Tp*) const noexcept {} };
+            { constexpr void operator()(_Tp*) const {} };
 
             template <class _Tp>
             struct __destroy<_Tp, false> {
                 constexpr void operator()(_Tp* __object_ptr) const
-                noexcept(std::is_nothrow_destructible<_Tp>::value) {
-                    std::destroy_at(__object_ptr);
-                }
+                { std::destroy_at(__object_ptr); }
             };
 
         } // namespace __variant
@@ -214,8 +218,7 @@ namespace std
         // Construct value by index
         template <size_t _Np, class _Tp = __to_type<_Np>, class... _Args>
         constexpr void
-        _construct(_Args&&... __args)
-        noexcept(std::is_nothrow_constructible<_Tp, _Args...>::value) {
+        _construct(_Args&&... __args) {
             ::new (_storage) _Tp(std::forward<_Args>(__args)...);
             _index = _Np;
         }
@@ -234,16 +237,16 @@ namespace std
 
         // Raw getters
         template <size_t _Np, class _Tp = __to_type<_Np>>
-        const _Tp& get() const& noexcept { return *(_Tp*)_storage; }
+        const _Tp& _get() const& { return *(_Tp*)_storage; }
 
         template <size_t _Np, class _Tp = __to_type<_Np>>
-        _Tp& get() & noexcept { return *(_Tp*)_storage; }
+        _Tp& _get() & { return *(_Tp*)_storage; }
 
         template <size_t _Np, class _Tp = __to_type<_Np>>
-        const _Tp&& get() const&& noexcept { return std::move(*(_Tp*)_storage); }
+        const _Tp&& _get() const&&  { return std::move(*(_Tp*)_storage); }
 
         template <size_t _Np, class _Tp = __to_type<_Np>>
-        _Tp&& get() && noexcept { return std::move(*(_Tp*)_storage); }
+        _Tp&& _get() && { return std::move(*(_Tp*)_storage); }
 
         // External getter
         template <size_t, class _Variant>
@@ -256,7 +259,7 @@ namespace std
     public:
         // Constructors
         // 1
-        constexpr variant() noexcept = default;
+        constexpr variant() = default;
         // 2
         constexpr variant(const variant& __other);
         // 3
@@ -271,7 +274,6 @@ namespace std
         >
         constexpr
         variant(_Tp&& __t)
-        noexcept(std::is_nothrow_constructible<_Tj, _Tp>::value)
         : variant(std::in_place_index_t<__index_of<_Tj>>{}, std::forward<_Tp>(__t))
         { }
 
@@ -336,12 +338,9 @@ namespace std
                 std::is_assignable<_Tj&, _Tp>::value>
         >
         constexpr variant&
-        operator=(_Tp&& __rhs)
-        noexcept(std::is_nothrow_assignable<_Tj&, _Tp>::value &&
-            std::is_nothrow_constructible<_Tj, _Tp>::value)
-        {
+        operator=(_Tp&& __rhs) {
             if (_index == _Np)
-                this->get<_Np, _Tj>() = std::forward<_Tp>(__rhs);
+                _get<_Np, _Tj>() = std::forward<_Tp>(__rhs);
             else {
                 _destruct();
                 _construct<_Np, _Tj>(std::forward<_Tp>(__rhs));
@@ -350,11 +349,11 @@ namespace std
         }
 
         // Returns the zero-based index of the alternative held by the variant
-        constexpr size_t index() const noexcept
+        constexpr size_t index() const
         { return _index; }
 
         // Returns false if and only if the variant holds a value
-        constexpr bool valueless_by_exception() const noexcept
+        constexpr bool valueless_by_exception() const
         { return _index == variant_npos; }
     };
 
@@ -418,7 +417,7 @@ namespace std
     // 1
     template <size_t _Np, class... _Types>
     constexpr std::add_pointer_t<variant_alternative_t<_Np, variant<_Types...>>>
-    get_if(variant<_Types...>* __ptr) noexcept {
+    get_if(variant<_Types...>* __ptr) {
         if (__ptr && __ptr->index() == _Np)
             return std::addressof(__detail::__variant::__raw_get<_Np>(*__ptr));
         return nullptr;
@@ -426,7 +425,7 @@ namespace std
 
     template <size_t _Np, class... _Types>
     constexpr std::add_pointer_t<const variant_alternative_t<_Np, variant<_Types...>>>
-    get_if(const variant<_Types...>* __ptr) noexcept {
+    get_if(const variant<_Types...>* __ptr) {
         if (__ptr && __ptr->index() == _Np)
             return std::addressof(__detail::__variant::__raw_get<_Np>(*__ptr));
         return nullptr;
@@ -435,7 +434,7 @@ namespace std
     // 2
     template <class _Tp, class... _Types>
     constexpr add_pointer_t<_Tp>
-    get_if(variant<_Types...>* __ptr) noexcept {
+    get_if(variant<_Types...>* __ptr) {
         static_assert(__detail::__variant::__exactly_once<_Tp, _Types...>::value,
             "_Tp must occur exactly once in alternatives");
         return get_if<__detail::__variant::__index_of<_Tp, _Types...>::value>(__ptr);
@@ -443,7 +442,7 @@ namespace std
 
     template <class _Tp, class... _Types>
     constexpr add_pointer_t<const _Tp>
-    get_if(const variant<_Types...>* __ptr) noexcept {
+    get_if(const variant<_Types...>* __ptr) {
         static_assert(__detail::__variant::__exactly_once<_Tp, _Types...>::value,
             "_Tp must occur exactly once in alternatives");
         return get_if<__detail::__variant::__index_of<_Tp, _Types...>::value>(__ptr);
@@ -475,7 +474,7 @@ namespace std
         if (!__other.valueless_by_exception()) {
             __detail::__variant::__raw_idx_visit(
                 [this, &__other](auto _Np) {
-                    _construct<_Np>(__other.template get<_Np>());
+                    _construct<_Np>(__other.template _get<_Np>());
                 },
                 __other);
         }
@@ -489,7 +488,7 @@ namespace std
         if (!__other.valueless_by_exception()) {
             __detail::__variant::__raw_idx_visit(
                 [this, &__other](auto _Np) {
-                    _construct<_Np>(std::move(__other).template get<_Np>());
+                    _construct<_Np>(std::move(__other).template _get<_Np>());
                 },
                 __other);
         }
@@ -514,13 +513,11 @@ namespace std
                     // If rhs holds the same alternative as *this, assign the
                     // value contained in rhs to the value contained in *this
                     if (__rhs.index() == index())
-                        this->get<_Np>() = __rhs.template get<_Np>();
+                        _get<_Np>() = __rhs.template _get<_Np>();
                     else {
                         // rhs and *this has different index
-                        // TODO if _construct or get throws, *this will be in
-                        //      invalid state
                         _destruct();
-                        _construct<_Np>(__rhs.template get<_Np>());
+                        _construct<_Np>(__rhs.template _get<_Np>());
                     }
                 },
                 __rhs);
@@ -540,13 +537,11 @@ namespace std
             __detail::__variant::__raw_idx_visit(
                 [this, &__rhs](auto _Np) {
                     if (__rhs.index() == index())
-                        this->get<_Np>() = std::move(__rhs).template get<_Np>();
+                        _get<_Np>() = std::move(__rhs).template _get<_Np>();
                     else {
                         // rhs and *this has different index
-                        // TODO if _construct or get throws, *this will be in
-                        //      invalid state
                         _destruct();
-                        _construct<_Np>(std::move(__rhs).template get<_Np>());
+                        _construct<_Np>(std::move(__rhs).template _get<_Np>());
                     }
                 },
                 __rhs);
