@@ -37,9 +37,21 @@ int main()
         std::cout << "---> visited copy: " << v << '\n';
     }, v4);
 
-    std::visit([](auto&& v) {
+    auto ret = std::visit([](auto&& v) {
         std::cout << "---> visited move: " << v << '\n';
+        return "hmm";
     }, std::move(v4));
+    std::cout << "---> ret: " << ret << '\n';
+
+    // emplace
+    v4.emplace<int>(42);
+    std::visit([](auto& v) {
+        std::cout << "---> emplaced int: " << v << '\n';
+    }, v4);
+    v4.emplace<std::string>({ 'h', 'e', 'l', 'l', 'o' });
+    std::visit([](auto& v) {
+        std::cout << "---> emplaced string: " << v << '\n';
+    }, v4);
 
     std::vector<int> vec { 42 };
     test_variant v5 = vec;
@@ -52,5 +64,13 @@ int main()
     assert(v6.index() == 0);
 
     std::cout << "v6: " << std::get<0>(v6) << '\n';
+
+    v6.swap(v4);
+    std::visit([](auto& v) {
+        std::cout << "---> swap v4: " << v << " (should be: 3)\n";
+    }, v4);
+    std::visit([](auto& v) {
+        std::cout << "---> swap v6: " << v << " (should be: hello)\n";
+    }, v6);
 }
 

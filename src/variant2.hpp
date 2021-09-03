@@ -105,7 +105,7 @@ namespace std
             // Find index to overload that _Tp is assignable to.
             template <class _Tp, class... _Types>
             struct __accepted_index<_Tp, variant<_Types...>,
-                std::void_t<decltype(__overload_set<_Types...>::_fun(std::declval<_Tp>()))> >
+                std::void_t<decltype(__overload_set<_Types...>::_fun(std::declval<_Tp>()))>>
             {
                 static constexpr size_t value = sizeof...(_Types) - 1 -
                     decltype(__overload_set<_Types...>::_fun(std::declval<_Tp>()))::value;
@@ -149,10 +149,13 @@ namespace std
             constexpr decltype(auto)
             __raw_idx_visit(size_t __index, _Visitor&& __visitor, std::index_sequence<_Ind...>)
             {
-                constexpr _Ret (*__vtable[])(_Visitor&&) = {
-                    &__raw_idx_visit<_Ind, _Visitor>...
-                };
-                return __vtable[__index](std::forward<_Visitor>(__visitor));
+                if (__index < sizeof...(_Ind)) {
+                    constexpr _Ret (*__vtable[])(_Visitor&&) = {
+                        &__raw_idx_visit<_Ind, _Visitor>...
+                    };
+                    return __vtable[__index](std::forward<_Visitor>(__visitor));
+                }
+                std::abort();
             }
 
             template <class _Visitor, class... _Types>
@@ -217,10 +220,11 @@ namespace std
 
         // Construct value by index
         template <size_t _Np, class _Tp = __to_type<_Np>, class... _Args>
-        constexpr void
+        constexpr _Tp&
         _construct(_Args&&... __args) {
-            ::new (_storage) _Tp(std::forward<_Args>(__args)...);
+            _Tp* __ret = ::new (_storage) _Tp(std::forward<_Args>(__args)...);
             _index = _Np;
+            return *__ret;
         }
 
         // Destruct if no valueless
@@ -347,6 +351,52 @@ namespace std
             }
             return *this;
         }
+
+        // Emplace
+        // 1
+        template <class _Tp, class... _Args,
+            class = std::enable_if_t<__exactly_once<_Tp> &&
+                std::is_constructible<_Tp, _Args...>::value>
+        >
+        constexpr _Tp&
+        emplace(_Args&&... __args)
+        { return this->emplace<__index_of<_Tp>>(std::forward<_Args>(__args)...); }
+
+        // 2
+        template <class _Tp, class _Up, class... _Args,
+            class = std::enable_if_t<__exactly_once<_Tp> &&
+                std::is_constructible<_Tp, std::initializer_list<_Up>&, _Args...>::value>
+        >
+        constexpr _Tp&
+        emplace(std::initializer_list<_Up> __il, _Args&&... __args)
+        { return this->emplace<__index_of<_Tp>>(__il, std::forward<_Args>(__args)...); }
+
+        // 3
+        template <size_t _Np, class... _Args,
+            class = std::enable_if_t<
+                std::is_constructible<variant_alternative_t<_Np, variant>, _Args...>::value>
+        >
+        constexpr variant_alternative_t<_Np, variant>&
+        emplace(_Args&&... __args) {
+            _destruct();
+            return _construct<_Np>(std::forward<_Args>(__args)...);
+        }
+
+        // 4
+        template <size_t _Np, class _Up, class... _Args,
+            class = std::enable_if_t<
+                std::is_constructible<variant_alternative_t<_Np, variant>,
+                    std::initializer_list<_Up>&, _Args...>::value>
+        >
+        variant_alternative_t<_Np, variant>&
+        emplace(std::initializer_list<_Up> __il, _Args&&... __args) {
+            _destruct();
+            return _construct<_Np>(__il, std::forward<_Args>(__args)...);
+        }
+
+        // Swap
+        constexpr void
+        swap(variant& __rhs);
 
         // Returns the zero-based index of the alternative held by the variant
         constexpr size_t index() const
@@ -512,7 +562,7 @@ namespace std
                 [this, &__rhs](auto _Np) {
                     // If rhs holds the same alternative as *this, assign the
                     // value contained in rhs to the value contained in *this
-                    if (__rhs.index() == index())
+                    if (__rhs._index == _index)
                         _get<_Np>() = __rhs.template _get<_Np>();
                     else {
                         // rhs and *this has different index
@@ -536,7 +586,7 @@ namespace std
         else { // rhs contains a value
             __detail::__variant::__raw_idx_visit(
                 [this, &__rhs](auto _Np) {
-                    if (__rhs.index() == index())
+                    if (__rhs._index == _index)
                         _get<_Np>() = std::move(__rhs).template _get<_Np>();
                     else {
                         // rhs and *this has different index
@@ -547,6 +597,54 @@ namespace std
                 __rhs);
         }
         return *this;
+    }
+
+    // Swap
+    template <class... _Types>
+    constexpr void
+    variant<_Types...>::swap(variant<_Types...>& __rhs)
+    {
+        // Note! Just swapping _storage and _index do not always work (ex.
+        // std::string, seems to hold internal pointer to it self).
+        if (valueless_by_exception() && __rhs.valueless_by_exception())
+            return;
+
+        __detail::__variant::__raw_idx_visit([this, &__rhs](auto __rhs_index) {
+        },
+        __rhs);
+
+#if 0
+        __detail::__variant::__raw_idx_visit([this, &__rhs](auto __thisI) {
+            __detail::__variant::__raw_idx_visit([this, &__rhs](auto __rhsI)
+            {
+                
+                if (__rhs._index == _index) {
+                    
+                }
+            },
+            __rhs);
+        },
+        *this);        
+
+        __detail::__variant::__raw_idx_visit(
+            [this, &__rhs](auto _Np) {
+                if (
+            },
+            __rhs);
+
+        // If both *this and rhs are valueless by exception, do nothing.
+        // Otherwise, if both *this and rhs hold the same alternative, call
+        // swap(std::get<i>(*this), std::get<i>(rhs)) where i is index().
+        if (__rhs._index == _index) {
+            if (!valueless_by_exception())
+               std::swap(_storage, __rhs._storage);
+        }
+        // Otherwise, exchange values of rhs and *this.
+        else {
+            std::swap(_storage, __rhs._storage);
+            std::swap(_index, __rhs._index);
+        }
+#endif
     }
 
 } // namespace std
