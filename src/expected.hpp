@@ -1,62 +1,40 @@
+/*
+ * Implementation of std::expected for Arduino.
+ * Vladimir Talybin
+ * 2021
+ *
+ * std::expected is not actually in standard, it's a proposal with
+ * following paper
+ * http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0323r4.html
+ * But it may be usefull as alternative to exceptions.
+ *
+ * Removed:
+ *   - bad_expected_access
+ * 
+ * Changes:
+ *   - std::unexpected renamed to std::not_expected because depricated
+ *     function with the same name is not removed until C++17.
+ */
+
 #pragma once
-#include <algorithm>
-
-#include "memory.hpp"
-#include "type_traits.hpp"
-#include "utility.hpp"
-
-// http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0323r4.html
+#include "variant.hpp"
 
 namespace std
 {
-    namespace expected_detail
-    {
-        template <class T, bool = std::is_trivially_destructible<T>::value>
-        struct destroyer
-        { void operator()(void*) {} };
-
-        template <class T>
-        struct destroyer<T, false>
-        { void operator()(void* ptr) { std::destroy_at((T*)ptr); } };
-
-        #if 0
-        // uninitialized<T> is guaranteed to be a trivially destructible type,
-        // even if T is not
-        template <class T>
-        struct uninitialized
-        {
-            template <class... Args>
-            constexpr void create(Args&&... args)
-            { ::new (storage_) T(std::forward<Args>(args)...); }
-
-            constexpr void destroy() { destroyer<T>{}(storage_); }
-            //{ B || std::destroy_at((T*)storage_); }
-
-            const T& get() const & noexcept { return *(T*)storage_; }
-            T& get() & noexcept { return *(T*)storage_; }
-
-            const T&& get() const && noexcept { return std::move(*(T*)storage_); }
-            T&& get() && noexcept { return std::move(*(T*)storage_); }
-
-            unsigned char storage_[sizeof(T)];
-        };
-        #endif
-
-    } // namespace expected_detail
-
-    template <class E>
+    // TODO fix me
+    template <class _Ep>
     struct not_expected
     {
         not_expected() = delete;
-        constexpr explicit not_expected(const E&) {}
-        constexpr explicit not_expected(E&&) {}
-        constexpr const E& value() const & {}
-        constexpr E& value() & { return value_; }
-        constexpr E&& value() && { return value_; }
-        constexpr E const&& value() const && { return value_; }
+        constexpr explicit not_expected(const _Ep&) {}
+        constexpr explicit not_expected(_Ep&&) {}
+        constexpr const _Ep& value() const & {}
+        constexpr _Ep& value() & { return _M_value; }
+        constexpr _Ep&& value() && { return _M_value; }
+        constexpr _Ep const&& value() const && { return _M_value; }
 
     private:
-        E value_;
+        _Ep _M_value;
     };
 
     // unexpect tag
@@ -64,298 +42,225 @@ namespace std
         explicit unexpect_t() = default;
     };
 
-    // bad_expected_access
-    template <class E>
-    struct bad_expected_access;
-
-    // Specialization for void
-    template <>
-    struct bad_expected_access<void>;
-
     // Expected for object types
-    template <class Value, class Error>
+    template <class _Value, class _Error>
     struct expected {
-    public:
-        static_assert(!std::is_same<Value, void>::value, "void type not implemented yet");
-
-        using value_type = Value;
-        using error_type = Error;
-
-        using unexpected_type = not_expected<error_type>;
-
     private:
-        // False means contains unexpected_type
-        bool has_value_ = false;
-        // Union storage
-        unsigned char storage_[std::max({ sizeof(value_type), sizeof(unexpected_type) })];
+        // TODO implement void
+        static_assert(!std::is_same<_Value, void>::value, "void type not implemented yet");
 
         // Alias
-        template <class T>
-        using not_self = std::negation<std::is_same<std::decay_t<T>, expected>>;
+        template <class _Tp>
+        static constexpr bool __not_self =
+            !std::is_same<std::decay_t<_Tp>, expected>::value;
 
-        // Replace storage with type T without destroying storage
-        template <class T, class... Args>
-        void create(Args&&... args)
-        {
-            ::new (storage_) T(std::forward<Args>(args)...);
-            has_value_ = std::is_same<T, value_type>::value;
-        }
-
-        // Destroy storage
-        void destroy()
-        {
-            if (has_value_) {
-                expected_detail::destroyer<value_type>{}(storage_);
-                has_value_ = false;
-            }
-            else
-                expected_detail::destroyer<unexpected_type>{}(storage_);
-        }
+        // Value holder
+        std::variant<_Value, not_expected<_Error>> _M_storage;
 
     public:
-        // constructors
-
+        // Constructors
         constexpr expected()
-        { create<value_type>(); }
+        : _M_storage(std::in_place_index_t<0>{})
+        { }
 
-        constexpr expected(const expected& rhs)
-        { rhs.has_value_ ? create<value_type>(rhs.value()) : create<unexpected_type>(rhs.error()); }
+        constexpr expected(const expected&) = default;
+        constexpr expected(expected&&) = default;
 
-        constexpr expected(expected&& rhs)
-        { rhs.has_value_ ? create<value_type>(std::move(rhs).value()) : create<unexpected_type>(std::move(rhs).error()); }
-
-        template <class T, class E,
-            class = std::enable_if_t<std::is_constructible<value_type, const T&>::value>,
-            class = std::enable_if_t<std::is_constructible<error_type, const E&>::value>
+        template <class _Tp, class _Ep,
+            class = std::enable_if_t<
+                std::is_constructible<_Value, const _Tp&>::value &&
+                std::is_constructible<_Error, const _Ep&>::value>
         >
-        constexpr explicit expected(const expected<T, E>& rhs)
-        { rhs.has_value_ ? create<value_type>(rhs.value()) : create<unexpected_type>(rhs.error()); }
-
-        template <class T, class E,
-            class = std::enable_if_t<std::is_constructible<value_type, T&&>::value>,
-            class = std::enable_if_t<std::is_constructible<error_type, E&&>::value>
-        >
-        constexpr explicit expected(expected<T, E>&& rhs)
-        { rhs.has_value_ ? create<value_type>(std::move(rhs).value()) : create<unexpected_type>(std::move(rhs).error()); }
-
-        template <class T = value_type,
-            class = std::enable_if_t<std::is_constructible<value_type, T>::value>,
-            class = std::enable_if_t<not_self<T>::value>
-        >
-        constexpr explicit expected(T&& v)
-        { create<value_type>(std::forward<T>(v)); }
-
-        template <class... Args,
-            class = std::enable_if_t<std::is_constructible<value_type, Args...>::value>
-        >
-        constexpr explicit expected(std::in_place_t, Args&&... args)
-        { create<value_type>(std::forward<Args>(args)...); }
-
-        template <class T, class... Args,
-            class = std::enable_if_t<std::is_constructible<value_type, std::initializer_list<T>&, Args...>::value>
-        >
-        constexpr explicit expected(std::in_place_t, std::initializer_list<T> il, Args&&... args)
-        { create<value_type>(il, std::forward<Args>(args)...); }
-
-        template <class E = error_type>
-        constexpr expected(const not_expected<E>& u)
-        { create<unexpected_type>(u); }
-
-        template <class E = error_type>
-        constexpr expected(not_expected<E>&& u)
-        { create<unexpected_type>(std::move(u)); }
-
-        template <class... Args,
-            class = std::enable_if_t<std::is_constructible<unexpected_type, Args...>::value>
-        >
-        constexpr explicit expected(unexpect_t, Args&&... args)
-        { create<unexpected_type>(std::forward<Args>(args)...); }
-
-        template <class T, class... Args,
-            class = std::enable_if_t<std::is_constructible<unexpected_type, std::initializer_list<T>&, Args...>::value>
-        >
-        constexpr explicit expected(unexpect_t, std::initializer_list<T> il, Args&&... args)
-        { create<unexpected_type>(il, std::forward<Args>(args)...); }
-
-        // destructor
-
-        ~expected() { destroy(); }
-
-        // assignment
-
-        expected& operator=(const expected& rhs)
-        {
-            if (has_value_) {
-                if (rhs.has_value_)
-                    // Both contain values
-                    value() = rhs.value();
-                else {
-                    // Self is value and rhs is error
-                    destroy();
-                    create<unexpected_type>(rhs.error());
-                }
-            }
-            else if (rhs.has_value_) {
-                // Self is error and rhs is value
-                destroy();
-                create<value_type>(rhs.value());
-            }
+        constexpr explicit
+        expected(const expected<_Tp, _Ep>& __rhs) {
+            if (__rhs.has_value())
+                _M_storage.template emplace<0>(std::get<0>(__rhs._M_storage));
             else
-                // Both contain errors
-                error() = rhs.error();
-            return *this;
+                _M_storage.template emplace<1>(std::get<1>(__rhs._M_storage));
         }
 
-        expected& operator=(expected&& rhs)
-        {
-            // Same logic as above
-            if (has_value_) {
-                if (rhs.has_value_)
-                    // Both contain values
-                    value() = std::move(rhs).value();
-                else {
-                    // Self is value and rhs is error
-                    destroy();
-                    create<unexpected_type>(std::move(rhs).error());
-                }
-            }
-            else if (rhs.has_value_) {
-                // Self is error and rhs is value
-                destroy();
-                create<value_type>(std::move(rhs).value());
-            }
-            else
-                // Both contain errors
-                error() = std::move(rhs).error();
-            return *this;
-        }
-
-        template <class T = value_type,
-            class = std::enable_if_t<not_self<T>::value>
+        template <class _Tp, class _Ep,
+            class = std::enable_if_t<
+                std::is_constructible<_Value, _Tp&&>::value &&
+                std::is_constructible<_Error, _Ep&&>::value>
         >
-        expected& operator=(T&& v)
-        {
-            if (has_value_)
-                value() = std::forward<T>(v);
-            else {
-                // Destroy not_expected and create value
-                destroy();
-                create<value_type>(std::forward<T>(v));
-            }
-            return *this;
-        }
-
-        template <class E = error_type>
-        expected& operator=(const not_expected<E>& u)
-        {
-            if (has_value_) {
-                // Destroy value and assign error
-                destroy();
-                create<unexpected_type>(u);
-            }
+        constexpr explicit
+        expected(expected<_Tp, _Ep>&& __rhs) {
+            if (__rhs.has_value())
+                _M_storage.template emplace<0>(std::get<0>(std::move(__rhs)._M_storage));
             else
-                error() = u.value();
-            return *this;
+                _M_storage.template emplace<1>(std::get<1>(std::move(__rhs)._M_storage));
         }
 
-        template <class E = error_type>
-        expected& operator=(not_expected<E>&& u)
-        {
-            if (has_value_) {
-                // Destroy value and assign error
-                destroy();
-                create<unexpected_type>(std::move(u));
-            }
-            else
-                error() = std::move(u).error();
-            return *this;
-        }
-
-        // emplace
-
-        template <class... Args>
-        value_type& emplace(Args&&... args)
-        { return (destroy(), create<value_type>(std::forward<Args>(args)...), value()); }
-
-        template <class T, class... Args>
-        value_type& emplace(initializer_list<T> il, Args&&... args)
-        { return (destroy(), create<value_type>(il, std::forward<Args>(args)...), value()); }
-
-        // swap
-
-        void swap(expected& rhs) noexcept
-        {
-            std::swap(storage_, rhs.storage_);
-            std::swap(has_value_, rhs.has_value_);
-        }
-
-        // observers
-
-        constexpr const value_type* operator->() const noexcept
-        { return (value_type*)storage_; }
-
-        constexpr value_type* operator->() noexcept
-        { return (value_type*)storage_; }
-
-        constexpr const value_type& operator*() const & noexcept
-        { return value(); }
-
-        constexpr value_type& operator*() & noexcept
-        { return value(); }
-
-        constexpr const value_type&& operator*() const && noexcept
-        { return value(); }
-
-        constexpr value_type&& operator*() && noexcept
-        { return value(); }
-
-        constexpr explicit operator bool() const noexcept
-        { return has_value_; }
-
-        constexpr bool has_value() const noexcept
-        { return has_value_; }
-
-        constexpr const value_type& value() const &
-        {
-            if (has_value_)
-                return *(value_type*)storage_;
-            // TODO call exception_handler (should be weak and by default abort)
-            // void exception_handler() __attribute__ ((__noreturn__));
-            //throw bad_expected_access();
-        }
-
-        constexpr value_type& value() & noexcept
-        { return *(value_type*)storage_; }
-
-        constexpr const value_type&& value() const && noexcept
-        { return std::move(*(value_type*)storage_); }
-
-        constexpr value_type&& value() && noexcept
-        { return std::move(*(value_type*)storage_); }
-
-        constexpr const error_type& error() const & noexcept
-        { return ((unexpected_type*)storage_)->value(); }
-
-        constexpr error_type& error() & noexcept
-        { return ((unexpected_type*)storage_)->value(); }
-
-        constexpr const error_type&& error() const && noexcept
-        { return std::move(*(unexpected_type*)storage_).value(); }
-
-        constexpr error_type&& error() && noexcept
-        { return std::move(*(unexpected_type*)storage_).value(); }
-
-        template <class T,
-            class = std::enable_if_t<std::is_constructible<value_type, T>::value>
+        template <class _Tp = _Value,
+            class = std::enable_if_t<
+                __not_self<_Tp> && std::is_constructible<_Value, _Tp>::value>
         >
-        constexpr value_type value_or(T&& v) const & noexcept
-        { return has_value_ ? value() : std::forward<T>(v); }
+        constexpr explicit
+        expected(_Tp&& __v)
+        : _M_storage(std::in_place_index_t<0>{}, std::forward<_Tp>(__v))
+        { }
 
-        template <class T,
-            class = std::enable_if_t<std::is_constructible<value_type, T>::value>
+        template <class... _Args,
+            class = std::enable_if_t<std::is_constructible<_Value, _Args...>::value>
         >
-        value_type value_or(T&& v) && noexcept
-        { return has_value_ ? std::move(value()) : std::forward<T>(v); }
+        constexpr explicit
+        expected(std::in_place_t, _Args&&... __args)
+        : _M_storage(std::in_place_index_t<0>{}, std::forward<_Args>(__args)...)
+        { }
+
+        template <class _Up, class... _Args,
+            class = std::enable_if_t<
+                std::is_constructible<_Value, std::initializer_list<_Up>&, _Args...>::value>
+        >
+        constexpr explicit
+        expected(std::in_place_t, std::initializer_list<_Up> __il, _Args&&... __args)
+        : _M_storage(std::in_place_index_t<0>{}, __il, std::forward<_Args>(__args)...)
+        { }
+
+        template <class _Ep = _Error>
+        constexpr
+        expected(const not_expected<_Ep>& __v)
+        : _M_storage(std::in_place_index_t<1>{}, __v)
+        { }
+
+        template <class _Ep = _Error>
+        constexpr
+        expected(not_expected<_Ep>&& __v)
+        : _M_storage(std::in_place_index_t<1>{}, std::move(__v))
+        { }
+
+        template <class... _Args,
+            class = std::enable_if_t<std::is_constructible<
+                not_expected<_Error>, _Args...>::value>
+        >
+        constexpr explicit
+        expected(unexpect_t, _Args&&... __args)
+        : _M_storage(std::in_place_index_t<1>{}, std::forward<_Args>(__args)...)
+        { }
+
+        template <class _Up, class... _Args,
+            class = std::enable_if_t<std::is_constructible<
+                not_expected<_Error>, std::initializer_list<_Up>&, _Args...>::value>
+        >
+        constexpr explicit
+        expected(unexpect_t, std::initializer_list<_Up> __il, _Args&&... __args)
+        : _M_storage(std::in_place_index_t<1>{}, __il, std::forward<_Args>(__args)...)
+        { }
+
+        // Destructor
+        ~expected() = default;
+
+        // Assignments
+        expected& operator=(const expected&) = default;
+        expected& operator=(expected&&) = default;
+
+        template <class _Tp = _Value,
+            class = std::enable_if_t<__not_self<_Tp>>
+        >
+        expected& operator=(_Tp&& __v)
+        { return (_M_storage.template emplace<0>(std::forward<_Tp>(__v)), *this); }
+
+        template <class _Ep = _Error>
+        expected& operator=(const not_expected<_Ep>& __v)
+        { return (_M_storage.template emplace<1>(__v), *this); }
+
+        template <class _Ep = _Error>
+        expected& operator=(not_expected<_Ep>&& __v)
+        { return (_M_storage.template emplace<1>(std::move(__v)), *this); }
+
+        // Emplace
+        template <class... _Args>
+        constexpr _Value&
+        emplace(_Args&&... __args)
+        { return _M_storage.template emplace<0>(std::forward<_Args>(__args)...); }
+
+        template <class _Up, class... _Args>
+        constexpr _Value&
+        emplace(std::initializer_list<_Up> __il, _Args&&... __args)
+        { return _M_storage.template emplace<0>(__il, std::forward<_Args>(__args)...); }
+
+        // Swap
+        void swap(expected& __rhs)
+        { _M_storage.swap(__rhs._M_storage); }
+
+        // Observers
+        constexpr const _Value*
+        operator->() const
+        { return std::get_if<0>(_M_storage); }
+
+        constexpr _Value*
+        operator->()
+        { return std::get_if<0>(_M_storage); }
+
+        constexpr const _Value&
+        operator*() const &
+        { return std::get<0>(_M_storage); }
+
+        constexpr _Value&
+        operator*() &
+        { return std::get<0>(_M_storage); }
+
+        constexpr const _Value&&
+        operator*() const &&
+        { return std::get<0>(std::move(_M_storage)); }
+
+        constexpr _Value&&
+        operator*() &&
+        { return std::get<0>(std::move(_M_storage)); }
+
+        constexpr explicit
+        operator bool() const
+        { return has_value(); }
+
+        constexpr bool
+        has_value() const
+        { return _M_storage.index() == 0; }
+
+        constexpr const _Value&
+        value() const &
+        { return std::get<0>(_M_storage); }
+
+        constexpr _Value&
+        value() &
+        { return std::get<0>(_M_storage); }
+
+        constexpr const _Value&&
+        value() const &&
+        { return std::get<0>(std::move(_M_storage)); }
+
+        constexpr _Value&& value() &&
+        { return std::get<0>(std::move(_M_storage)); }
+
+        constexpr const _Error&
+        error() const &
+        { return std::get<1>(_M_storage).value(); }
+
+        constexpr _Error&
+        error() &
+        { return std::get<1>(_M_storage).value(); }
+
+        constexpr const _Error&&
+        error() const &&
+        { return std::get<1>(std::move(_M_storage)).value(); }
+
+        constexpr _Error&&
+        error() &&
+        { return std::get<1>(std::move(_M_storage)).value(); }
+
+        template <class _Tp,
+            class = std::enable_if_t<std::is_constructible<_Value, _Tp>::value>
+        >
+        constexpr _Value
+        value_or(_Tp&& __v) const &
+        { return has_value() ? value() : std::forward<_Tp>(__v); }
+
+        template <class _Tp,
+            class = std::enable_if_t<std::is_constructible<_Value, _Tp>::value>
+        >
+        constexpr _Value
+        value_or(_Tp&& __v) &&
+        { return has_value() ? std::move(value()) : std::forward<_Tp>(__v); }
     };
 
 } // namespace std

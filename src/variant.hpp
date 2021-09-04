@@ -16,6 +16,9 @@
  * Removed:
  *   - bad_variant_access
  *
+ * Limitations:
+ *   - std::visit support only one variant as argument.
+ *
  * Not implemented (yet):
  *   - std::hash<variant>
  */
@@ -133,7 +136,7 @@ namespace std
             template <size_t _Np, class _Variant>
             constexpr decltype(auto)
             __raw_get(_Variant&& __variant)
-            { return std::forward<_Variant>(__variant).template _get<_Np>(); }
+            { return std::forward<_Variant>(__variant).template _M_get<_Np>(); }
 
             template <size_t _Np, class _Variant>
             constexpr decltype(auto)
@@ -229,44 +232,44 @@ namespace std
         // Construct value by index
         template <size_t _Np, class _Tp = __to_type<_Np>, class... _Args>
         constexpr _Tp&
-        _construct(_Args&&... __args) {
-            _Tp* __ret = ::new (_storage) _Tp(std::forward<_Args>(__args)...);
-            _index = _Np;
+        _M_construct(_Args&&... __args) {
+            _Tp* __ret = ::new (_M_storage) _Tp(std::forward<_Args>(__args)...);
+            _M_index = _Np;
             return *__ret;
         }
 
         // Destruct if no valueless
         constexpr void
-        _destruct() {
-            if (_index != variant_npos) {
+        _M_destruct() {
+            if (_M_index != variant_npos) {
                 __detail::__variant::__raw_idx_visit([this](auto _Np) {
                     using _Tp = __to_type<_Np>;
-                    __detail::__variant::__destroy<_Tp>{}((_Tp*)_storage);
+                    __detail::__variant::__destroy<_Tp>{}((_Tp*)_M_storage);
                 }, *this);
-                _index = variant_npos;
+                _M_index = variant_npos;
             }
         }
 
         // Raw getters
         template <size_t _Np, class _Tp = __to_type<_Np>>
-        const _Tp& _get() const& { return *(_Tp*)_storage; }
+        const _Tp& _M_get() const& { return *(_Tp*)_M_storage; }
 
         template <size_t _Np, class _Tp = __to_type<_Np>>
-        _Tp& _get() & { return *(_Tp*)_storage; }
+        _Tp& _M_get() & { return *(_Tp*)_M_storage; }
 
         template <size_t _Np, class _Tp = __to_type<_Np>>
-        const _Tp&& _get() const&&  { return std::move(*(_Tp*)_storage); }
+        const _Tp&& _M_get() const&&  { return std::move(*(_Tp*)_M_storage); }
 
         template <size_t _Np, class _Tp = __to_type<_Np>>
-        _Tp&& _get() && { return std::move(*(_Tp*)_storage); }
+        _Tp&& _M_get() && { return std::move(*(_Tp*)_M_storage); }
 
         // External getter
         template <size_t, class _Variant>
         friend constexpr decltype(auto) __detail::__variant::__raw_get(_Variant&&);
 
         // Value holder (union)
-        unsigned char _storage[std::max({ sizeof(_Types)... })];
-        size_t _index = variant_npos;
+        unsigned char _M_storage[std::max({ sizeof(_Types)... })];
+        size_t _M_index = variant_npos;
 
     public:
         // Constructors
@@ -318,7 +321,7 @@ namespace std
         >
         constexpr explicit
         variant(std::in_place_index_t<_Np>, _Args&&... __args)
-        { _construct<_Np, _Tp>(std::forward<_Args>(__args)...); }
+        { _M_construct<_Np, _Tp>(std::forward<_Args>(__args)...); }
 
         // 8
         template <size_t _Np, class _Up, class... _Args,
@@ -329,11 +332,11 @@ namespace std
         constexpr explicit
         variant(std::in_place_index_t<_Np>,
             std::initializer_list<_Up> __il, _Args&&... __args)
-        { _construct<_Np, _Tp>(__il, std::forward<_Args>(__args)...); }
+        { _M_construct<_Np, _Tp>(__il, std::forward<_Args>(__args)...); }
 
         // Destructor
         ~variant()
-        { _destruct(); }
+        { _M_destruct(); }
 
         // Assignments
         // 1
@@ -351,11 +354,11 @@ namespace std
         >
         constexpr variant&
         operator=(_Tp&& __rhs) {
-            if (_index == _Np)
-                _get<_Np, _Tj>() = std::forward<_Tp>(__rhs);
+            if (_M_index == _Np)
+                _M_get<_Np, _Tj>() = std::forward<_Tp>(__rhs);
             else {
-                _destruct();
-                _construct<_Np, _Tj>(std::forward<_Tp>(__rhs));
+                _M_destruct();
+                _M_construct<_Np, _Tj>(std::forward<_Tp>(__rhs));
             }
             return *this;
         }
@@ -386,8 +389,8 @@ namespace std
         >
         constexpr variant_alternative_t<_Np, variant>&
         emplace(_Args&&... __args) {
-            _destruct();
-            return _construct<_Np>(std::forward<_Args>(__args)...);
+            _M_destruct();
+            return _M_construct<_Np>(std::forward<_Args>(__args)...);
         }
 
         // 4
@@ -398,8 +401,8 @@ namespace std
         >
         variant_alternative_t<_Np, variant>&
         emplace(std::initializer_list<_Up> __il, _Args&&... __args) {
-            _destruct();
-            return _construct<_Np>(__il, std::forward<_Args>(__args)...);
+            _M_destruct();
+            return _M_construct<_Np>(__il, std::forward<_Args>(__args)...);
         }
 
         // Swap
@@ -408,11 +411,11 @@ namespace std
 
         // Returns the zero-based index of the alternative held by the variant
         constexpr size_t index() const
-        { return _index; }
+        { return _M_index; }
 
         // Returns false if and only if the variant holds a value
         constexpr bool valueless_by_exception() const
-        { return _index == variant_npos; }
+        { return _M_index == variant_npos; }
     };
 
     // get
@@ -541,7 +544,7 @@ namespace std
         if (!__rhs.valueless_by_exception()) {
             __detail::__variant::__raw_idx_visit(
                 [this, &__rhs](auto _Np) {
-                    _construct<_Np>(__rhs.template _get<_Np>());
+                    _M_construct<_Np>(__rhs.template _M_get<_Np>());
                 },
                 __rhs);
         }
@@ -555,7 +558,7 @@ namespace std
         if (!__rhs.valueless_by_exception()) {
             __detail::__variant::__raw_idx_visit(
                 [this, &__rhs](auto _Np) {
-                    _construct<_Np>(std::move(__rhs).template _get<_Np>());
+                    _M_construct<_Np>(std::move(__rhs).template _M_get<_Np>());
                 },
                 __rhs);
         }
@@ -567,24 +570,24 @@ namespace std
     constexpr variant<_Types...>&
     variant<_Types...>::operator=(const variant<_Types...>& __rhs)
     {
-        // Note, _destruct will destroy value only if not valueless
+        // Note, _M_destruct will destroy value only if not valueless
         if (__rhs.valueless_by_exception()) {
             // If both *this and rhs are valueless by exception, do nothing.
             // Otherwise, if rhs is valueless, but *this is not, destroy
             // the value contained in *this and makes it valueless.
-            _destruct();
+            _M_destruct();
         }
         else { // rhs contains a value
             __detail::__variant::__raw_idx_visit(
                 [this, &__rhs](auto _Np) {
                     // If rhs holds the same alternative as *this, assign the
                     // value contained in rhs to the value contained in *this
-                    if (__rhs._index == _index)
-                        _get<_Np>() = __rhs.template _get<_Np>();
+                    if (__rhs._M_index == _M_index)
+                        _M_get<_Np>() = __rhs.template _M_get<_Np>();
                     else {
                         // rhs and *this has different index
-                        _destruct();
-                        _construct<_Np>(__rhs.template _get<_Np>());
+                        _M_destruct();
+                        _M_construct<_Np>(__rhs.template _M_get<_Np>());
                     }
                 },
                 __rhs);
@@ -599,16 +602,16 @@ namespace std
     {
         // Same as copy assignment but moves in value
         if (__rhs.valueless_by_exception())
-            _destruct();
+            _M_destruct();
         else { // rhs contains a value
             __detail::__variant::__raw_idx_visit(
                 [this, &__rhs](auto _Np) {
-                    if (__rhs._index == _index)
-                        _get<_Np>() = std::move(__rhs).template _get<_Np>();
+                    if (__rhs._M_index == _M_index)
+                        _M_get<_Np>() = std::move(__rhs).template _M_get<_Np>();
                     else {
                         // rhs and *this has different index
-                        _destruct();
-                        _construct<_Np>(std::move(__rhs).template _get<_Np>());
+                        _M_destruct();
+                        _M_construct<_Np>(std::move(__rhs).template _M_get<_Np>());
                     }
                 },
                 __rhs);
@@ -624,7 +627,7 @@ namespace std
         // If both *this and rhs are valueless by exception, do nothing.
         if (valueless_by_exception() && __rhs.valueless_by_exception())
             return;
-        // Note! Just swapping _storage and _index do not always work.
+        // Note! Just swapping _M_storage and _M_index do not always work.
         // Ex. std::string that hold a pointer to internal buffer (small
         // string optimization) and will still point to old buffer.
         // Now we could visit both indexes here, but it would be almost

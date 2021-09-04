@@ -30,6 +30,7 @@ namespace std
     template <class _Tp>
     struct negation : bool_constant<!bool(_Tp::value)> {};
 
+    #ifndef __cpp_lib_is_swappable
     /// \see https://en.cppreference.com/w/cpp/types/is_swappable
     template <class, class = void>
     struct is_swappable : std::false_type {};
@@ -38,18 +39,7 @@ namespace std
     struct is_swappable<_Tp,
         void_t<decltype(swap(std::declval<_Tp&>(), std::declval<_Tp&>()))>>
     : std::true_type {};
-
-    template <class _Tp>
-    struct is_nothrow_swappable {
-    private:
-        static bool_constant<
-            noexcept(swap(std::declval<_Tp&>(), std::declval<_Tp&>()))>
-        __test(int);
-
-        static std::false_type __test(...);
-    public:
-        static constexpr bool value = decltype(__test(0))::value;
-    };
+    #endif
 
 } // namespace std
 #endif // __cplusplus < 201703L
