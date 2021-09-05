@@ -660,15 +660,16 @@ namespace std
     constexpr bool operator<=(monostate, monostate) { return true;  }
     constexpr bool operator>=(monostate, monostate) { return true;  }
 
+// TODO fix me
 #define _VARIANT_RELATION_FUNCTION_TEMPLATE(__OP, __NAME) \
     template <class... _Types> \
     constexpr bool operator __OP( \
         const std::variant<_Types...>& __lhs, const std::variant<_Types...>& __rhs) \
     { \
         if (__lhs.index() != __rhs.index()) \
-            return false; \
+            return __lhs.index() __OP __rhs.index(); \
         if (__lhs.valueless_by_exception()) \
-            return true; \
+            return __lhs.index() __OP __rhs.index(); \
         return __detail::__variant::__raw_idx_visit( \
             [&](auto _Np) { \
                 return __detail::__variant::__raw_get<_Np>(__lhs) \
