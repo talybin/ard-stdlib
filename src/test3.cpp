@@ -16,8 +16,82 @@ namespace std {
     bool operator==(const Ref&, const Ref&) { return true; }
 }
 
+void cmp_test()
+{
+    // v1, v2 are valueless
+    std::variant<int, std::string> v1, v2, v3, v4, v5, v6;
+    v3 = 1;
+    v4 = 1;
+    v5 = 2;
+    v6 = "test";
+
+    // operator==
+    assert(v1 == v2);
+    assert(v3 == v4);
+    assert(not (v3 == v5));
+    assert(not (v5 == v3));
+    assert(not (v3 == v6));
+    assert(not (v6 == v3));
+    assert(not (v1 == v3));
+    assert(not (v3 == v1));
+
+    // operator!=
+    assert(not (v1 != v2));
+    assert(not (v3 != v4));
+    assert(v3 != v5);
+    assert(v5 != v3);
+    assert(v3 != v6);
+    assert(v6 != v3);
+    assert(v1 != v3);
+    assert(v3 != v1);
+
+    // operator<
+    assert(not (v1 < v2));
+    assert(not (v3 < v4));
+    assert(v3 < v5);
+    assert(not (v5 < v3));
+    assert(v3 < v6);
+    assert(not (v6 < v3));
+    assert(v1 < v3);
+    assert(not (v3 < v1));
+
+    // operator>
+    assert(not (v1 > v2));
+    assert(not (v3 > v4));
+    assert(not (v3 > v5));
+    assert(v5 > v3);
+    assert(not (v3 > v6));
+    assert(v6 > v3);
+    assert(not (v1 > v3));
+    assert(v3 > v1);
+
+    // operator<=
+    assert(v1 <= v2);
+    assert(v3 <= v4);
+    assert(v4 <= v3);
+    assert(v3 <= v5);
+    assert(not (v5 <= v3));
+    assert(v3 <= v6);
+    assert(not (v6 <= v3));
+    assert(v1 <= v3);
+    assert(not (v3 <= v1));
+
+    // operator>=
+    assert(v1 >= v2);
+    assert(v3 >= v4);
+    assert(v4 <= v3);
+    assert(not (v3 >= v5));
+    assert(v5 >= v3);
+    assert(not (v3 >= v6));
+    assert(v6 >= v3);
+    assert(not (v1 >= v3));
+    assert(v3 >= v1);
+}
+
 int main()
 {
+    cmp_test();
+
     using test_variant = std::variant<int, Ref, std::string>;
     //using test_variant = std::variant<int, std::string>;
 
@@ -71,7 +145,8 @@ int main()
 
 //    v5 = std::vector<std::string>{};
 
-    test_variant v6 = 3.14f;
+    //test_variant v6 = 3.14f;
+    test_variant v6 = 3;
     assert(v6.index() == 0);
 
     std::cout << "v6: " << std::get<0>(v6) << '\n';

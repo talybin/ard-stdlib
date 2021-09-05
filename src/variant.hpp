@@ -660,29 +660,29 @@ namespace std
     constexpr bool operator<=(monostate, monostate) { return true;  }
     constexpr bool operator>=(monostate, monostate) { return true;  }
 
-// TODO fix me
-#define _VARIANT_RELATION_FUNCTION_TEMPLATE(__OP, __NAME) \
+#define _VARIANT_RELATION_FUNCTION_TEMPLATE(__OP) \
     template <class... _Types> \
     constexpr bool operator __OP( \
         const std::variant<_Types...>& __lhs, const std::variant<_Types...>& __rhs) \
     { \
-        if (__lhs.index() != __rhs.index()) \
-            return __lhs.index() __OP __rhs.index(); \
-        if (__lhs.valueless_by_exception()) \
-            return __lhs.index() __OP __rhs.index(); \
-        return __detail::__variant::__raw_idx_visit( \
-            [&](auto _Np) { \
-                return __detail::__variant::__raw_get<_Np>(__lhs) \
-                  __OP __detail::__variant::__raw_get<_Np>(__rhs); \
-            }, __rhs); \
+        if (__rhs.index() != variant_npos) { \
+            if (__lhs.index() == __rhs.index()) { \
+                return __detail::__variant::__raw_idx_visit( \
+                    [&](auto _Np) { \
+                        return __detail::__variant::__raw_get<_Np>(__lhs) \
+                          __OP __detail::__variant::__raw_get<_Np>(__rhs); \
+                    }, __rhs); \
+            } \
+        } \
+        return (__lhs.index() + 1) __OP (__rhs.index() + 1); \
     }
 
-    _VARIANT_RELATION_FUNCTION_TEMPLATE(<, less)
-    _VARIANT_RELATION_FUNCTION_TEMPLATE(<=, less_equal)
-    _VARIANT_RELATION_FUNCTION_TEMPLATE(==, equal)
-    _VARIANT_RELATION_FUNCTION_TEMPLATE(!=, not_equal)
-    _VARIANT_RELATION_FUNCTION_TEMPLATE(>=, greater_equal)
-    _VARIANT_RELATION_FUNCTION_TEMPLATE(>, greater)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(<)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(<=)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(==)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(!=)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(>=)
+    _VARIANT_RELATION_FUNCTION_TEMPLATE(>)
 
 #undef _VARIANT_RELATION_FUNCTION_TEMPLATE
 
