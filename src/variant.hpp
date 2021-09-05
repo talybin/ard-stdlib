@@ -1,27 +1,51 @@
-/*
- * Implementation of std::variant for Arduino.
- * Vladimir Talybin
- * 2021
- *
- * Note! Since Arduino has exceptions disabled the implementation
- * become much simpler. All noexcept flags removed and no actions
- * (in case exception throws) for invalid state applied.
- * In case of invalid operation (like getting value of valueless
- * variant) the program will abort (call std::abort()).
- *
- * Features:
- *   - Works with C++14.
- *   - Does not instantiate objects before assigning (stdlib do).
- *
- * Removed:
- *   - bad_variant_access
- *
- * Limitations:
- *   - std::visit support only one variant as argument.
- *
- * Not implemented (yet):
- *   - std::hash<variant>
- */
+// <variant> -*- C++ -*-
+
+// Copyright (C) 2016-2020 Free Software Foundation, Inc.
+//
+// This file is part of the GNU ISO C++ Library.  This library is free
+// software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the
+// Free Software Foundation; either version 3, or (at your option)
+// any later version.
+
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// Under Section 7 of GPL version 3, you are granted additional
+// permissions described in the GCC Runtime Library Exception, version
+// 3.1, as published by the Free Software Foundation.
+
+// You should have received a copy of the GNU General Public License and
+// a copy of the GCC Runtime Library Exception along with this program;
+// see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+// <http://www.gnu.org/licenses/>.
+
+//
+// Adapted to Arduino devices (running C++14 with RTTI and exceptions disabled).
+// Vladimir Talybin (2021)
+//
+// File version: 1.0.0
+//
+// Note! Since Arduino has exceptions disabled the implementation become much
+// simpler. All noexcept flags removed and no actions (in case exception throws)
+// for invalid state applied.
+// In case of invalid operation (like getting value of valueless variant) the
+// program will abort (call std::abort()).
+//
+// Features:
+//  - does not instantiate objects before assigning (stdlib do)
+//
+// Removed:
+//  - bad_variant_access
+//
+// Limitations:
+//  - std::visit support only one variant as argument
+//
+// Not implemented (yet):
+//  - std::hash<variant>
+//
 
 #pragma once
 

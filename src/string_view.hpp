@@ -1,18 +1,46 @@
-/*
- * Implementation of std::string_view for Arduino.
- * Copyright (C) 2013-2020 Free Software Foundation, Inc.
- *
- * C++14 version by Vladimir Talybin (2021)
- *
- * Features:
- *   - Includes starts_with, ends_with from C++20 and contains from C++23
- */
+// Components for manipulating non-owning sequences of characters -*- C++ -*-
+
+// Copyright (C) 2013-2020 Free Software Foundation, Inc.
+//
+// This file is part of the GNU ISO C++ Library.  This library is free
+// software; you can redistribute it and/or modify it under the
+// terms of the GNU General Public License as published by the
+// Free Software Foundation; either version 3, or (at your option)
+// any later version.
+
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// Under Section 7 of GPL version 3, you are granted additional
+// permissions described in the GCC Runtime Library Exception, version
+// 3.1, as published by the Free Software Foundation.
+
+// You should have received a copy of the GNU General Public License and
+// a copy of the GCC Runtime Library Exception along with this program;
+// see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+// <http://www.gnu.org/licenses/>.
+
+//
+// Adapted to Arduino devices (running C++14 with RTTI and exceptions disabled).
+// Vladimir Talybin (2021)
+//
+// File version: 1.0.0
+//
+// Features:
+//  - includes starts_with(), ends_with() from C++20 and contains() from C++23
+//
 
 #pragma once
 
 #if __cplusplus >= 201703L
 #include <string_view>
 #else
+
+#include <bits/char_traits.h>
+#include <iterator>
+#include "type_traits.hpp"
 
 namespace std
 {
@@ -172,7 +200,7 @@ namespace std
         // [string.view.ops], string operations:
 
         constexpr size_type
-        copy(_CharT* __str, size_type __n, size_type __pos = 0) const
+        copy(_CharT* __str, size_type __n, size_type __pos = 0) const noexcept
         {
             __glibcxx_requires_string_len(__str, __n);
             __pos = std::__sv_check(size(), __pos, "basic_string_view::copy");
@@ -184,7 +212,7 @@ namespace std
         }
 
         constexpr basic_string_view
-        substr(size_type __pos = 0, size_type __n = npos) const noexcept(false)
+        substr(size_type __pos = 0, size_type __n = npos) const noexcept
         {
             __pos = std::__sv_check(size(), __pos, "basic_string_view::substr");
             const size_type __rlen = std::min(__n, _M_len - __pos);
@@ -370,177 +398,161 @@ namespace std
 
     // [string.view.comparison], non-member basic_string_view comparison function
 
-  // Several of these functions use type_identity_t to create a non-deduced
-  // context, so that only one argument participates in template argument
-  // deduction and the other argument gets implicitly converted to the deduced
-  // type (see N3766).
+    // Several of these functions use type_identity_t to create a non-deduced
+    // context, so that only one argument participates in template argument
+    // deduction and the other argument gets implicitly converted to the deduced
+    // type (see N3766).
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator==(basic_string_view<_CharT, _Traits> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return __x.size() == __y.size() && __x.compare(__y) == 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator==(basic_string_view<_CharT, _Traits> __x,
-               __type_identity_t<basic_string_view<_CharT, _Traits>> __y)
+               std::type_identity_t<basic_string_view<_CharT, _Traits>> __y)
     noexcept
     { return __x.size() == __y.size() && __x.compare(__y) == 0; }
 
-#if __cpp_lib_three_way_comparison
-  template<typename _CharT, typename _Traits>
-    constexpr auto
-    operator<=>(basic_string_view<_CharT, _Traits> __x,
-        basic_string_view<_CharT, _Traits> __y) noexcept
-    -> decltype(__detail::__char_traits_cmp_cat<_Traits>(0))
-    { return __detail::__char_traits_cmp_cat<_Traits>(__x.compare(__y)); }
-
-  template<typename _CharT, typename _Traits>
-    constexpr auto
-    operator<=>(basic_string_view<_CharT, _Traits> __x,
-        __type_identity_t<basic_string_view<_CharT, _Traits>> __y)
-    noexcept
-    -> decltype(__detail::__char_traits_cmp_cat<_Traits>(0))
-    { return __detail::__char_traits_cmp_cat<_Traits>(__x.compare(__y)); }
-#else
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
-    operator==(__type_identity_t<basic_string_view<_CharT, _Traits>> __x,
+    operator==(std::type_identity_t<basic_string_view<_CharT, _Traits>> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return __x.size() == __y.size() && __x.compare(__y) == 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator!=(basic_string_view<_CharT, _Traits> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return !(__x == __y); }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator!=(basic_string_view<_CharT, _Traits> __x,
-               __type_identity_t<basic_string_view<_CharT, _Traits>> __y)
+               std::type_identity_t<basic_string_view<_CharT, _Traits>> __y)
     noexcept
     { return !(__x == __y); }
 
-    template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
-    operator!=(__type_identity_t<basic_string_view<_CharT, _Traits>> __x,
+    operator!=(std::type_identity_t<basic_string_view<_CharT, _Traits>> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return !(__x == __y); }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator< (basic_string_view<_CharT, _Traits> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return __x.compare(__y) < 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator< (basic_string_view<_CharT, _Traits> __x,
-               __type_identity_t<basic_string_view<_CharT, _Traits>> __y)
+               std::type_identity_t<basic_string_view<_CharT, _Traits>> __y)
     noexcept
     { return __x.compare(__y) < 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
-    operator< (__type_identity_t<basic_string_view<_CharT, _Traits>> __x,
+    operator< (std::type_identity_t<basic_string_view<_CharT, _Traits>> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return __x.compare(__y) < 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator> (basic_string_view<_CharT, _Traits> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return __x.compare(__y) > 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator> (basic_string_view<_CharT, _Traits> __x,
-               __type_identity_t<basic_string_view<_CharT, _Traits>> __y)
+               std::type_identity_t<basic_string_view<_CharT, _Traits>> __y)
     noexcept
     { return __x.compare(__y) > 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
-    operator> (__type_identity_t<basic_string_view<_CharT, _Traits>> __x,
+    operator> (std::type_identity_t<basic_string_view<_CharT, _Traits>> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return __x.compare(__y) > 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator<=(basic_string_view<_CharT, _Traits> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return __x.compare(__y) <= 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator<=(basic_string_view<_CharT, _Traits> __x,
-               __type_identity_t<basic_string_view<_CharT, _Traits>> __y)
+               std::type_identity_t<basic_string_view<_CharT, _Traits>> __y)
     noexcept
     { return __x.compare(__y) <= 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
-    operator<=(__type_identity_t<basic_string_view<_CharT, _Traits>> __x,
+    operator<=(std::type_identity_t<basic_string_view<_CharT, _Traits>> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return __x.compare(__y) <= 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator>=(basic_string_view<_CharT, _Traits> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return __x.compare(__y) >= 0; }
 
-    template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
     operator>=(basic_string_view<_CharT, _Traits> __x,
-               __type_identity_t<basic_string_view<_CharT, _Traits>> __y)
+               std::type_identity_t<basic_string_view<_CharT, _Traits>> __y)
     noexcept
     { return __x.compare(__y) >= 0; }
 
-  template<typename _CharT, typename _Traits>
+    template <typename _CharT, typename _Traits>
     constexpr bool
-    operator>=(__type_identity_t<basic_string_view<_CharT, _Traits>> __x,
+    operator>=(std::type_identity_t<basic_string_view<_CharT, _Traits>> __x,
                basic_string_view<_CharT, _Traits> __y) noexcept
     { return __x.compare(__y) >= 0; }
-#endif // three-way comparison
 
-  // [string.view.io], Inserters and extractors
-  template<typename _CharT, typename _Traits>
+    // [string.view.io], Inserters and extractors
+    template <typename _CharT, typename _Traits>
     inline basic_ostream<_CharT, _Traits>&
     operator<<(basic_ostream<_CharT, _Traits>& __os,
            basic_string_view<_CharT,_Traits> __str)
     { return __ostream_insert(__os, __str.data(), __str.size()); }
 
 
-  // basic_string_view typedef names
+    // basic_string_view typedef names
 
-  using string_view = basic_string_view<char>;
+    using string_view = basic_string_view<char>;
 #ifdef _GLIBCXX_USE_WCHAR_T
-  using wstring_view = basic_string_view<wchar_t>;
+    using wstring_view = basic_string_view<wchar_t>;
 #endif
 #ifdef _GLIBCXX_USE_CHAR8_T
-  using u8string_view = basic_string_view<char8_t>;
+    using u8string_view = basic_string_view<char8_t>;
 #endif
-  using u16string_view = basic_string_view<char16_t>;
-  using u32string_view = basic_string_view<char32_t>;
+    using u16string_view = basic_string_view<char16_t>;
+    using u32string_view = basic_string_view<char32_t>;
 
-  // [string.view.hash], hash support:
+#if 0
+    // [string.view.hash], hash support:
 
-  template<typename _Tp>
+    template <class _Tp>
     struct hash;
 
-  template<>
+    template<>
     struct hash<string_view>
     : public __hash_base<size_t, string_view>
     {
-      size_t
-      operator()(const string_view& __str) const noexcept
-      { return std::_Hash_impl::hash(__str.data(), __str.length()); }
+        size_t
+        operator()(const string_view& __str) const noexcept
+        { return std::_Hash_impl::hash(__str.data(), __str.length()); }
     };
 
-  template<>
+    template<>
     struct __is_fast_hash<hash<string_view>> : std::false_type
     { };
 
@@ -602,40 +614,41 @@ namespace std
   template<>
     struct __is_fast_hash<hash<u32string_view>> : std::false_type
     { };
+#endif
 
-  inline namespace literals
-  {
-  inline namespace string_view_literals
-  {
+    inline namespace literals
+    {
+        inline namespace string_view_literals
+        {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wliteral-suffix"
-    inline constexpr basic_string_view<char>
-    operator""sv(const char* __str, size_t __len) noexcept
-    { return basic_string_view<char>{__str, __len}; }
+            inline constexpr basic_string_view<char>
+            operator""sv(const char* __str, size_t __len) noexcept
+            { return basic_string_view<char>{__str, __len}; }
 
 #ifdef _GLIBCXX_USE_WCHAR_T
-    inline constexpr basic_string_view<wchar_t>
-    operator""sv(const wchar_t* __str, size_t __len) noexcept
-    { return basic_string_view<wchar_t>{__str, __len}; }
+            inline constexpr basic_string_view<wchar_t>
+            operator""sv(const wchar_t* __str, size_t __len) noexcept
+            { return basic_string_view<wchar_t>{__str, __len}; }
 #endif
 
 #ifdef _GLIBCXX_USE_CHAR8_T
-    inline constexpr basic_string_view<char8_t>
-    operator""sv(const char8_t* __str, size_t __len) noexcept
-    { return basic_string_view<char8_t>{__str, __len}; }
+            inline constexpr basic_string_view<char8_t>
+            operator""sv(const char8_t* __str, size_t __len) noexcept
+            { return basic_string_view<char8_t>{__str, __len}; }
 #endif
 
-    inline constexpr basic_string_view<char16_t>
-    operator""sv(const char16_t* __str, size_t __len) noexcept
-    { return basic_string_view<char16_t>{__str, __len}; }
+            inline constexpr basic_string_view<char16_t>
+            operator""sv(const char16_t* __str, size_t __len) noexcept
+            { return basic_string_view<char16_t>{__str, __len}; }
 
-    inline constexpr basic_string_view<char32_t>
-    operator""sv(const char32_t* __str, size_t __len) noexcept
-    { return basic_string_view<char32_t>{__str, __len}; }
+            inline constexpr basic_string_view<char32_t>
+            operator""sv(const char32_t* __str, size_t __len) noexcept
+            { return basic_string_view<char32_t>{__str, __len}; }
 
 #pragma GCC diagnostic pop
-  } // namespace string_literals
-  } // namespace literals
+        } // namespace string_literals
+    } // namespace literals
 
 } // namespace std
 

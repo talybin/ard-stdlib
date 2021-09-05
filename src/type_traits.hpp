@@ -2,6 +2,7 @@
 #include <type_traits>
 
 #if __cplusplus < 201703L
+// C++17 type traits
 namespace std
 {
     /// \see https://en.cppreference.com/w/cpp/types/void_t
@@ -42,5 +43,20 @@ namespace std
     #endif
 
 } // namespace std
-#endif // __cplusplus < 201703L
+#endif // C++17
+
+#if __cplusplus <= 201703L
+// C++20 type traits
+namespace std
+{
+    /// \see https://en.cppreference.com/w/cpp/types/type_identity
+    template <class _Tp>
+    struct type_identity
+    { using type = _Tp; };
+
+    template <class _Tp>
+    using type_identity_t = typename type_identity<_Tp>::type;
+
+} // namespace std
+#endif // C++20
 
