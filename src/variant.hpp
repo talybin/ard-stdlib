@@ -174,14 +174,12 @@ namespace std
                 return std::forward<_Visitor>(__visitor)(std::integral_constant<size_t, _Np>{});
             }
 
-            template <class _Visitor, size_t... _Ind,
-                class _Ret = std::common_type_t<
-                    decltype(std::declval<_Visitor>()(std::integral_constant<size_t, _Ind>{}))...>
-            >
+            template <class _Visitor, size_t... _Ind>
             constexpr decltype(auto)
             __raw_idx_visit(size_t __index, _Visitor&& __visitor, std::index_sequence<_Ind...>)
             {
                 if (__index < sizeof...(_Ind)) {
+                    using _Ret = decltype(__visitor(std::integral_constant<size_t, 0>{}));
                     constexpr _Ret (*__vtable[])(_Visitor&&) = {
                         &__raw_idx_visit<_Ind, _Visitor>...
                     };
@@ -549,7 +547,7 @@ namespace std
             std::abort();
 
         return __detail::__variant::__raw_idx_visit(
-            [&](auto _Np) {
+            [&](auto _Np) -> decltype(auto) {
                 return std::forward<_Visitor>(__visitor)(
                     __detail::__variant::__raw_get<_Np>(std::forward<_Variant>(__variant)));
             },
