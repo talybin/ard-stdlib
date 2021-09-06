@@ -35,7 +35,7 @@
 // program will abort (call std::abort()).
 //
 // Features:
-//  - does not instantiate objects before assigning (stdlib do)
+//  - Does not instantiate objects before assigning (stdlib do)
 //
 // Removed:
 //  - bad_variant_access

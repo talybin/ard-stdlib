@@ -57,6 +57,15 @@ namespace std
     template <class _Tp>
     using type_identity_t = typename type_identity<_Tp>::type;
 
+    /// \see https://en.cppreference.com/w/cpp/types/remove_cvref
+    template <class _Tp>
+    struct remove_cvref {
+        using type = std::remove_cv_t<std::remove_reference_t<_Tp>>;
+    };
+
+    template <class _Tp>
+    using remove_cvref_t = typename remove_cvref<_Tp>::type;
+
 } // namespace std
 #endif // C++20
 

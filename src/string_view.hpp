@@ -26,10 +26,13 @@
 // Adapted to Arduino devices (running C++14 with RTTI and exceptions disabled).
 // Vladimir Talybin (2021)
 //
+// Note! In case of invalid operation (like calling front() on empty string) the
+// program will abort (call std::abort()).
+//
 // File version: 1.0.0
 //
 // Features:
-//  - includes starts_with(), ends_with() from C++20 and contains() from C++23
+//  - Includes starts_with(), ends_with() from C++20 and contains() from C++23
 //
 
 #pragma once
@@ -146,31 +149,36 @@ namespace std
 
         // [string.view.access], element access
 
+        // vlta: call std::abort() if __pos >= _M_len
         constexpr const_reference
         operator[](size_type __pos) const noexcept {
-            __glibcxx_assert(__pos < this->_M_len);
-            return *(this->_M_str + __pos);
+            if (__pos < _M_len)
+                return *(this->_M_str + __pos);
+            std::abort();
         }
 
+        // vlta: call std::abort() if __pos >= _M_len
         constexpr const_reference
-        at(size_type __pos) const {
-            if (__pos >= _M_len)
-                __throw_out_of_range_fmt(__N("basic_string_view::at: __pos "
-                    "(which is %zu) >= this->size() "
-                    "(which is %zu)"), __pos, this->size());
-            return *(this->_M_str + __pos);
+        at(size_type __pos) const noexcept {
+            if (__pos < _M_len)
+                return *(this->_M_str + __pos);
+            std::abort();
         }
 
+        // vlta: call std::abort() if _M_len == 0
         constexpr const_reference
         front() const noexcept {
-            __glibcxx_assert(this->_M_len > 0);
-            return *this->_M_str;
+            if (this->_M_len > 0)
+                return *this->_M_str;
+            std::abort();
         }
 
+        // vlta: call std::abort() if _M_len == 0
         constexpr const_reference
         back() const noexcept {
-            __glibcxx_assert(this->_M_len > 0);
-            return *(this->_M_str + this->_M_len - 1);
+            if (this->_M_len > 0)
+                return *(this->_M_str + this->_M_len - 1);
+            std::abort();
         }
 
         constexpr const_pointer
@@ -179,9 +187,10 @@ namespace std
 
         // [string.view.modifiers], modifiers:
 
+        // vlta: _M_len >= __n makes the string empty
         constexpr void
         remove_prefix(size_type __n) noexcept {
-            __glibcxx_assert(this->_M_len >= __n);
+            __n = std::min(__n, _M_len);
             this->_M_str += __n;
             this->_M_len -= __n;
         }
@@ -199,24 +208,29 @@ namespace std
 
         // [string.view.ops], string operations:
 
+        // vlta: silently do nothing if __pos out of range, return 0 in this case
         constexpr size_type
         copy(_CharT* __str, size_type __n, size_type __pos = 0) const noexcept
         {
-            __glibcxx_requires_string_len(__str, __n);
-            __pos = std::__sv_check(size(), __pos, "basic_string_view::copy");
-            const size_type __rlen = std::min(__n, _M_len - __pos);
-            // _GLIBCXX_RESOLVE_LIB_DEFECTS
-            // 2777. basic_string_view::copy should use char_traits::copy
-            traits_type::copy(__str, data() + __pos, __rlen);
-            return __rlen;
+            if (__pos < _M_len) {
+                const size_type __rlen = std::min(__n, _M_len - __pos);
+                // _GLIBCXX_RESOLVE_LIB_DEFECTS
+                // 2777. basic_string_view::copy should use char_traits::copy
+                traits_type::copy(__str, data() + __pos, __rlen);
+                return __rlen;
+            }
+            return 0;
         }
 
+        // vlta: if __pos out of range return empty string
         constexpr basic_string_view
         substr(size_type __pos = 0, size_type __n = npos) const noexcept
         {
-            __pos = std::__sv_check(size(), __pos, "basic_string_view::substr");
-            const size_type __rlen = std::min(__n, _M_len - __pos);
-            return basic_string_view{_M_str + __pos, __rlen};
+            if (__pos < _M_len) {
+                const size_type __rlen = std::min(__n, _M_len - __pos);
+                return basic_string_view{_M_str + __pos, __rlen};
+            }
+            return {};
         }
 
         constexpr int
@@ -250,7 +264,7 @@ namespace std
 
         constexpr int
         compare(size_type __pos1, size_type __n1,
-            const _CharT* __str, size_type __n2) const noexcept(false)
+            const _CharT* __str, size_type __n2) const noexcept
         { return this->substr(__pos1, __n1).compare(basic_string_view(__str, __n2)); }
 
         constexpr bool
@@ -396,6 +410,165 @@ namespace std
         const _CharT* _M_str;
     };
 
+    template <typename _CharT, typename _Traits>
+    constexpr typename basic_string_view<_CharT, _Traits>::size_type
+    basic_string_view<_CharT, _Traits>::
+    find(const _CharT* __str, size_type __pos, size_type __n) const noexcept
+    {
+        if (__n == 0)
+            return __pos <= this->_M_len ? __pos : npos;
+
+        if (__n <= this->_M_len) {
+            for (; __pos <= this->_M_len - __n; ++__pos)
+                if (traits_type::eq(this->_M_str[__pos], __str[0])
+                    && traits_type::compare(this->_M_str + __pos + 1,
+                        __str + 1, __n - 1) == 0)
+                    return __pos;
+        }
+        return npos;
+    }
+
+    template <typename _CharT, typename _Traits>
+    constexpr typename basic_string_view<_CharT, _Traits>::size_type
+    basic_string_view<_CharT, _Traits>::
+    find(_CharT __c, size_type __pos) const noexcept
+    {
+        size_type __ret = npos;
+        if (__pos < this->_M_len) {
+            const size_type __n = this->_M_len - __pos;
+            const _CharT* __p = traits_type::find(this->_M_str + __pos, __n, __c);
+            if (__p)
+                __ret = __p - this->_M_str;
+        }
+        return __ret;
+    }
+
+    template <typename _CharT, typename _Traits>
+    constexpr typename basic_string_view<_CharT, _Traits>::size_type
+    basic_string_view<_CharT, _Traits>::
+    rfind(const _CharT* __str, size_type __pos, size_type __n) const noexcept
+    {
+        if (__n <= this->_M_len) {
+            __pos = std::min(size_type(this->_M_len - __n), __pos);
+            do {
+                if (traits_type::compare(this->_M_str + __pos, __str, __n) == 0)
+                    return __pos;
+            }
+            while (__pos-- > 0);
+        }
+        return npos;
+    }
+
+    template <typename _CharT, typename _Traits>
+    constexpr typename basic_string_view<_CharT, _Traits>::size_type
+    basic_string_view<_CharT, _Traits>::
+    rfind(_CharT __c, size_type __pos) const noexcept
+    {
+        size_type __size = this->_M_len;
+        if (__size > 0) {
+            if (--__size > __pos)
+                __size = __pos;
+            for (++__size; __size-- > 0; )
+                if (traits_type::eq(this->_M_str[__size], __c))
+                    return __size;
+        }
+        return npos;
+    }
+
+    template <typename _CharT, typename _Traits>
+    constexpr typename basic_string_view<_CharT, _Traits>::size_type
+    basic_string_view<_CharT, _Traits>::
+    find_first_of(
+        const _CharT* __str, size_type __pos, size_type __n) const noexcept
+    {
+        for (; __n && __pos < this->_M_len; ++__pos) {
+            const _CharT* __p =
+                traits_type::find(__str, __n, this->_M_str[__pos]);
+            if (__p)
+                return __pos;
+        }
+        return npos;
+    }
+
+    template <typename _CharT, typename _Traits>
+    constexpr typename basic_string_view<_CharT, _Traits>::size_type
+    basic_string_view<_CharT, _Traits>::
+    find_last_of(
+        const _CharT* __str, size_type __pos, size_type __n) const noexcept
+    {
+        size_type __size = this->size();
+        if (__size && __n) {
+            if (--__size > __pos)
+                __size = __pos;
+            do {
+                if (traits_type::find(__str, __n, this->_M_str[__size]))
+                    return __size;
+            }
+            while (__size-- != 0);
+        }
+        return npos;
+    }
+
+    template <typename _CharT, typename _Traits>
+    constexpr typename basic_string_view<_CharT, _Traits>::size_type
+    basic_string_view<_CharT, _Traits>::
+    find_first_not_of(
+        const _CharT* __str, size_type __pos, size_type __n) const noexcept
+    {
+        for (; __pos < this->_M_len; ++__pos)
+            if (!traits_type::find(__str, __n, this->_M_str[__pos]))
+                return __pos;
+        return npos;
+    }
+
+    template <typename _CharT, typename _Traits>
+    constexpr typename basic_string_view<_CharT, _Traits>::size_type
+    basic_string_view<_CharT, _Traits>::
+    find_first_not_of(_CharT __c, size_type __pos) const noexcept
+    {
+        for (; __pos < this->_M_len; ++__pos)
+            if (!traits_type::eq(this->_M_str[__pos], __c))
+                return __pos;
+        return npos;
+    }
+
+    template <typename _CharT, typename _Traits>
+    constexpr typename basic_string_view<_CharT, _Traits>::size_type
+    basic_string_view<_CharT, _Traits>::
+    find_last_not_of(
+        const _CharT* __str, size_type __pos, size_type __n) const noexcept
+    {
+        size_type __size = this->_M_len;
+        if (__size) {
+            if (--__size > __pos)
+                __size = __pos;
+            do {
+                if (!traits_type::find(__str, __n, this->_M_str[__size]))
+                    return __size;
+            }
+            while (__size--);
+        }
+        return npos;
+    }
+
+    template <typename _CharT, typename _Traits>
+    constexpr typename basic_string_view<_CharT, _Traits>::size_type
+    basic_string_view<_CharT, _Traits>::
+    find_last_not_of(_CharT __c, size_type __pos) const noexcept
+    {
+        size_type __size = this->_M_len;
+        if (__size) {
+            if (--__size > __pos)
+                __size = __pos;
+            do {
+                if (!traits_type::eq(this->_M_str[__size], __c))
+                    return __size;
+            }
+            while (__size--);
+        }
+        return npos;
+    }
+
     // [string.view.comparison], non-member basic_string_view comparison function
 
     // Several of these functions use type_identity_t to create a non-deduced
@@ -537,13 +710,12 @@ namespace std
     using u16string_view = basic_string_view<char16_t>;
     using u32string_view = basic_string_view<char32_t>;
 
-#if 0
     // [string.view.hash], hash support:
 
     template <class _Tp>
     struct hash;
 
-    template<>
+    template <>
     struct hash<string_view>
     : public __hash_base<size_t, string_view>
     {
@@ -552,69 +724,68 @@ namespace std
         { return std::_Hash_impl::hash(__str.data(), __str.length()); }
     };
 
-    template<>
+    template <>
     struct __is_fast_hash<hash<string_view>> : std::false_type
     { };
 
 #ifdef _GLIBCXX_USE_WCHAR_T
-  template<>
+    template <>
     struct hash<wstring_view>
     : public __hash_base<size_t, wstring_view>
     {
-      size_t
-      operator()(const wstring_view& __s) const noexcept
-      { return std::_Hash_impl::hash(__s.data(),
-                                     __s.length() * sizeof(wchar_t)); }
+        size_t
+        operator()(const wstring_view& __s) const noexcept
+        { return std::_Hash_impl::hash(
+            __s.data(), __s.length() * sizeof(wchar_t)); }
     };
 
-  template<>
+    template <>
     struct __is_fast_hash<hash<wstring_view>> : std::false_type
     { };
 #endif
 
 #ifdef _GLIBCXX_USE_CHAR8_T
-  template<>
+    template <>
     struct hash<u8string_view>
     : public __hash_base<size_t, u8string_view>
     {
-      size_t
-      operator()(const u8string_view& __str) const noexcept
-      { return std::_Hash_impl::hash(__str.data(), __str.length()); }
+        size_t
+        operator()(const u8string_view& __str) const noexcept
+        { return std::_Hash_impl::hash(__str.data(), __str.length()); }
     };
 
-  template<>
+    template <>
     struct __is_fast_hash<hash<u8string_view>> : std::false_type
     { };
 #endif
 
-  template<>
+    template <>
     struct hash<u16string_view>
     : public __hash_base<size_t, u16string_view>
     {
-      size_t
-      operator()(const u16string_view& __s) const noexcept
-      { return std::_Hash_impl::hash(__s.data(),
-                                     __s.length() * sizeof(char16_t)); }
+        size_t
+        operator()(const u16string_view& __s) const noexcept
+        { return std::_Hash_impl::hash(
+            __s.data(), __s.length() * sizeof(char16_t)); }
     };
 
-  template<>
+    template <>
     struct __is_fast_hash<hash<u16string_view>> : std::false_type
     { };
 
-  template<>
+    template <>
     struct hash<u32string_view>
     : public __hash_base<size_t, u32string_view>
     {
-      size_t
-      operator()(const u32string_view& __s) const noexcept
-      { return std::_Hash_impl::hash(__s.data(),
-                                     __s.length() * sizeof(char32_t)); }
+        size_t
+        operator()(const u32string_view& __s) const noexcept
+        { return std::_Hash_impl::hash(
+            __s.data(), __s.length() * sizeof(char32_t)); }
     };
 
-  template<>
+    template <>
     struct __is_fast_hash<hash<u32string_view>> : std::false_type
     { };
-#endif
 
     inline namespace literals
     {
