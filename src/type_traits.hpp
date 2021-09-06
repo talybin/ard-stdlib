@@ -42,6 +42,37 @@ namespace std
     : std::true_type {};
     #endif
 
+    template <class _Tp>
+    struct is_nothrow_swappable {
+    private:
+        static bool_constant<noexcept(swap(std::declval<_Tp&>(), std::declval<_Tp&>()))>
+        __test(int);
+        static false_type __test(...);
+    public:
+        static constexpr bool value = decltype(__test(0))::value;
+    };
+
+    template <class, class, class = void>
+    struct is_swappable_with : std::false_type {};
+
+    template <class _Tp, class _Up>
+    struct is_swappable_with<_Tp, _Up, std::void_t<
+        decltype(swap(std::declval<_Tp>(), std::declval<_Up>())),
+        decltype(swap(std::declval<_Up>(), std::declval<_Tp>()))>>
+    : std::true_type {};
+
+    template <class _Tp, class _Up>
+    struct is_nothrow_swappable_with {
+    private:
+        static bool_constant<
+            noexcept(swap(std::declval<_Tp>(), std::declval<_Up>())) &&
+            noexcept(swap(std::declval<_Up>(), std::declval<_Tp>()))>
+        __test(int);
+        static false_type __test(...);
+    public:
+        static constexpr bool value = decltype(__test(0))::value;
+    };
+
 } // namespace std
 #endif // C++17
 

@@ -1,5 +1,4 @@
 #include "variant.hpp"
-#include "expected.hpp"
 #include <iostream>
 
 
@@ -101,7 +100,5 @@ int main()
 
     static_assert(std::is_same<
         decltype(std::visit(f5, std::variant<int>{0})), int&&>::value);
-
-    std::expected<int, double> e;
 }
 

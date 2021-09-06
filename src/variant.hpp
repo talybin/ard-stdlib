@@ -34,9 +34,6 @@
 // In case of invalid operation (like getting value of valueless variant) the
 // program will abort (call std::abort()).
 //
-// Features:
-//  - Does not instantiate objects before assigning (stdlib do)
-//
 // Removed:
 //  - bad_variant_access
 //
