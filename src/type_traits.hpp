@@ -69,3 +69,51 @@ namespace std
 } // namespace std
 #endif // C++20
 
+// std::experimental
+namespace std
+{
+    /// \see https://en.cppreference.com/w/cpp/experimental/nonesuch
+    struct nonesuch {
+        ~nonesuch() = delete;
+        nonesuch(nonesuch const&) = delete;
+        void operator=(nonesuch const&) = delete;
+    };
+
+    namespace __detail
+    {
+        template <class _Default, class _AlwaysVoid,
+            template <class...> class _Op, class... _Args>
+        struct __detector {
+            using value_t = std::false_type;
+            using type = _Default;
+        };
+ 
+        template <class _Default, template <class...> class _Op, class... _Args>
+        struct __detector<_Default, std::void_t<_Op<_Args...>>, _Op, _Args...> {
+            using value_t = std::true_type;
+            using type = _Op<_Args...>;
+        };
+ 
+    } // namespace __detail
+ 
+    /// \see https://en.cppreference.com/w/cpp/experimental/is_detected
+    template <template <class...> class _Op, class... _Args>
+    using is_detected = typename __detail::__detector<nonesuch, void, _Op, _Args...>::value_t;
+ 
+    template <template <class...> class _Op, class... _Args>
+    using detected_t = typename __detail::__detector<nonesuch, void, _Op, _Args...>::type;
+ 
+    template <class _Default, template <class...> class _Op, class... _Args>
+    using detected_or = __detail::__detector<_Default, void, _Op, _Args...>;
+
+    template <class _Default, template <class...> class _Op, class... _Args>
+    using detected_or_t = typename detected_or<_Default, _Op, _Args...>::type;
+
+    template <class _Expected, template <class...> class _Op, class... _Args>
+    using is_detected_exact = std::is_same<_Expected, detected_t<_Op, _Args...>>;
+
+    template <class _To, template <class...> class _Op, class... _Args>
+    using is_detected_convertible = std::is_convertible<detected_t<_Op, _Args...>, _To>;
+
+} // namespace std
+
