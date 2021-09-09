@@ -44,6 +44,7 @@
 #include <bits/char_traits.h>
 #include <iterator>
 #include "type_traits.hpp"
+#include "exception.hpp"
 
 namespace std
 {
@@ -143,42 +144,48 @@ namespace std
                 sizeof(value_type) / 4;
         }
 
-        [[nodiscard]] constexpr bool
+        constexpr bool
         empty() const noexcept
         { return this->_M_len == 0; }
 
         // [string.view.access], element access
 
-        // vlta: call std::abort() if __pos >= _M_len
         constexpr const_reference
-        operator[](size_type __pos) const noexcept {
+        operator[](size_type __pos) const {
             if (__pos < _M_len)
                 return *(this->_M_str + __pos);
-            std::abort();
+            ard::throw_error(ard::error() <<
+                "basic_string_view::operator[]: __pos "
+                "(which is " << __pos << ") >= size() "
+                "(which is " << this->size() << ')'
+            );
         }
 
-        // vlta: call std::abort() if __pos >= _M_len
         constexpr const_reference
-        at(size_type __pos) const noexcept {
+        at(size_type __pos) const {
             if (__pos < _M_len)
                 return *(this->_M_str + __pos);
-            std::abort();
+            ard::throw_error(ard::error() <<
+                "basic_string_view::at: __pos "
+                "(which is " << __pos << ") >= size() "
+                "(which is " << this->size() << ')'
+            );
         }
 
-        // vlta: call std::abort() if _M_len == 0
         constexpr const_reference
-        front() const noexcept {
+        front() const {
             if (this->_M_len > 0)
                 return *this->_M_str;
-            std::abort();
+            ard::throw_error(
+                ard::error("basic_string_view::front: string is empty"));
         }
 
-        // vlta: call std::abort() if _M_len == 0
         constexpr const_reference
-        back() const noexcept {
+        back() const {
             if (this->_M_len > 0)
                 return *(this->_M_str + this->_M_len - 1);
-            std::abort();
+            ard::throw_error(
+                ard::error("basic_string_view::back: string is empty"));
         }
 
         constexpr const_pointer

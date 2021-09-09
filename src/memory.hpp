@@ -5,9 +5,9 @@
 namespace std
 {
     /// \see https://en.cppreference.com/w/cpp/memory/destroy_at
-    template <class T>
-    inline void destroy_at(T* p) {
-        p->~T();
+    template <class _Tp>
+    inline void destroy_at(_Tp* p) {
+        p->~_Tp();
     }
 
 } // namespace std

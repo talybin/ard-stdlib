@@ -8,11 +8,11 @@ namespace std
     struct in_place_t {
         explicit in_place_t() = default;
     };
-    template <class T>
+    template <class>
     struct in_place_type_t {
         explicit in_place_type_t() = default;
     };
-    template <std::size_t I>
+    template <std::size_t>
     struct in_place_index_t {
         explicit in_place_index_t() = default;
     };

@@ -1,6 +1,10 @@
 #include "string_view.hpp"
 #include <iostream>
 
+void on_exception(const std::exception& e) {
+    std::cout << "exception: " << e.what() << '\n';
+}
+
 int main()
 {
     using namespace std::literals;
@@ -11,5 +15,7 @@ int main()
 
     std::cout << s2 << '\n';
     std::cout << std::hash<std::string_view>{}(s2) << '\n';
+
+    s1.at(10);
 }
 
