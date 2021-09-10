@@ -58,16 +58,18 @@ void loop() { }
 
 ### Exception handling
 
-As you may know, exceptions are disabled on Arduino. Instead of throwing exception, library will call special handler function with exception as argument. It is defined in `exception.hpp` and in case of an exception, will reboot the device.
+As you may know, exceptions are disabled on Arduino. Instead of throwing exception, library will call special handler function with exception as argument. It is defined in `exception.hpp` and in case of an exception, will abort the program (call `std::abort`).
 
-To catch exception override exception handler.
+To catch exceptions override exception handler.
 
 ```cpp
 #include "exception.hpp"
 
 void ard::on_exception(const std::exception& ex) {
-    // Log exception before reboot
+    // Log exception
     Particle.publish("Error", ex.what(), PRIVATE);
+    // Reboot
+    System.reset();
 }
 
 void setup() { }
