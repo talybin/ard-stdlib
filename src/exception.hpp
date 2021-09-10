@@ -51,8 +51,7 @@ namespace ard
     throw_exception(const std::exception& err) {
         if (on_exception)
             on_exception(err);
-        //System.reset();
-        std::abort();
+        System.reset();
     }
 
 } // namespace ard

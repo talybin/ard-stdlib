@@ -26,9 +26,6 @@
 // Adapted to Arduino devices (running C++14 with RTTI and exceptions disabled).
 // Vladimir Talybin (2021)
 //
-// Note! In case of invalid operation (like calling front() on empty string) the
-// program will abort (call std::abort()).
-//
 // File version: 1.0.0
 //
 // Features:

@@ -28,17 +28,11 @@
 //
 // File version: 1.0.0
 //
-// Note! Since Arduino has exceptions disabled the implementation become much
-// simpler. All noexcept flags removed and no actions (in case exception throws)
-// for invalid state applied.
-// In case of invalid operation (like getting value of valueless variant) the
-// program will abort (call std::abort()).
-//
 // Limitations:
 //  - std::visit support only one variant as argument
 //
 // Not implemented (yet):
-//  - std::hash<variant>
+//  - std::hash<std::variant>
 //
 
 #pragma once
