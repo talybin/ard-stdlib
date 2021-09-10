@@ -31,7 +31,6 @@ type_traits.hpp
 * [conjunction](https://en.cppreference.com/w/cpp/types/conjunction)
 * [disjunction](https://en.cppreference.com/w/cpp/types/disjunction)
 * [negation](https://en.cppreference.com/w/cpp/types/negation)
-* [is_swappable, is_nothrow_swappable, is_swappable_with, is_nothrow_swappable_with](https://en.cppreference.com/w/cpp/types/is_swappable)
 * [type_identity](https://en.cppreference.com/w/cpp/types/type_identity)
 * [remove_cvref](https://en.cppreference.com/w/cpp/types/remove_cvref)
 * [nonesuch](https://en.cppreference.com/w/cpp/experimental/nonesuch)
@@ -47,7 +46,7 @@ All header files has the same name as original but with postfix `.hpp`. For exam
 void setup()
 {
     std::variant<int, float> v;
-    v = 19.5; // v contains float
+    v = 19.5f; // v contains float
 
     bool success = std::visit([](auto temp) {
         return Particle.publish("temperature", String::format("%.1f", temp));
