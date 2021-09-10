@@ -8,11 +8,11 @@
 #include <exception>
 #include <string>
 
-// Define this function to catch exception
-extern void on_exception(const std::exception&) __attribute__((weak));
-
 namespace ard
 {
+    // Define this function to catch exception
+    extern void on_exception(const std::exception&) __attribute__((weak));
+
     // Streaming exception
     struct error : std::exception {
     private:
@@ -51,6 +51,7 @@ namespace ard
     throw_exception(const std::exception& err) {
         if (on_exception)
             on_exception(err);
+        //System.reset();
         std::abort();
     }
 

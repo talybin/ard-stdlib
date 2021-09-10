@@ -1,7 +1,7 @@
 #include "string_view.hpp"
 #include <iostream>
 
-void on_exception(const std::exception& e) {
+void ard::on_exception(const std::exception& e) {
     std::cout << "exception: " << e.what() << '\n';
 }
 
