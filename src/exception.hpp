@@ -46,7 +46,7 @@ namespace ard
         }
     };
 
-    // Call throw_error instead of throw
+    // throw_exception
     [[noreturn]] inline void
     throw_exception(const std::exception& err) {
         if (on_exception)

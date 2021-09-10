@@ -41,6 +41,7 @@ type_traits.hpp
 All header files has the same name as original but with postfix `.hpp`. For example, to include variant use `variant.hpp`.
 
 ```cpp
+#include "Particle.h"
 #include "variant.hpp"
 
 void setup()
@@ -63,6 +64,7 @@ As you may know, exceptions are disabled on Arduino. Instead of throwing excepti
 To catch exceptions override exception handler.
 
 ```cpp
+#include "Particle.h"
 #include "exception.hpp"
 
 void ard::on_exception(const std::exception& ex) {
