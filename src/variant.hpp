@@ -34,9 +34,6 @@
 // In case of invalid operation (like getting value of valueless variant) the
 // program will abort (call std::abort()).
 //
-// Removed:
-//  - bad_variant_access
-//
 // Limitations:
 //  - std::visit support only one variant as argument
 //
@@ -56,6 +53,7 @@
 #include "type_traits.hpp"
 #include "utility.hpp"
 #include "memory.hpp"
+#include "exception.hpp"
 
 namespace std
 {
@@ -86,6 +84,36 @@ namespace std
 
     // monostate
     struct monostate {};
+
+    // bad_variant_access
+    struct bad_variant_access : std::exception
+    {
+        bad_variant_access() noexcept {}
+
+        const char* what() const noexcept override
+        { return _M_reason; }
+
+    private:
+        bad_variant_access(const char* __reason) noexcept : _M_reason(__reason) {}
+
+        // Must point to a string with static storage duration:
+        const char* _M_reason = "bad variant access";
+
+        [[noreturn]] friend void __throw_bad_variant_access(const char* __what);
+    };
+
+    // Must only be called with a string literal
+    [[noreturn]] inline void
+    __throw_bad_variant_access(const char* __what)
+    { ard::throw_exception(bad_variant_access(__what)); }
+
+    [[noreturn]] inline void
+    __throw_bad_variant_access(bool __valueless) {
+        if (__valueless) [[__unlikely__]]
+            __throw_bad_variant_access("std::get: variant is valueless");
+        else
+            __throw_bad_variant_access("std::get: wrong index for variant");
+    }
 
     // detail
     namespace __detail {
@@ -163,7 +191,7 @@ namespace std
             constexpr decltype(auto)
             __get(_Variant&& __variant) {
                 if (__variant.index() != _Np)
-                    std::abort();
+                    __throw_bad_variant_access(__variant.valueless_by_exception());
                 return __raw_get<_Np>(std::forward<_Variant>(__variant));
             }
 
@@ -185,7 +213,7 @@ namespace std
                     };
                     return __vtable[__index](std::forward<_Visitor>(__visitor));
                 }
-                std::abort();
+                __throw_bad_variant_access("__raw_idx_visit: variant is valueless");
             }
 
             template <class _Visitor, class... _Types>
@@ -544,7 +572,7 @@ namespace std
     visit(_Visitor&& __visitor, _Variant&& __variant)
     {
         if (__variant.valueless_by_exception())
-            std::abort();
+            __throw_bad_variant_access("std::visit: variant is valueless");
 
         return __detail::__variant::__raw_idx_visit(
             [&](auto _Np) -> decltype(auto) {

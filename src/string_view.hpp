@@ -154,7 +154,7 @@ namespace std
         operator[](size_type __pos) const {
             if (__pos < _M_len)
                 return *(this->_M_str + __pos);
-            ard::throw_error(ard::error() <<
+            ard::throw_exception(ard::error() <<
                 "basic_string_view::operator[]: __pos "
                 "(which is " << __pos << ") >= size() "
                 "(which is " << this->size() << ')'
@@ -165,7 +165,7 @@ namespace std
         at(size_type __pos) const {
             if (__pos < _M_len)
                 return *(this->_M_str + __pos);
-            ard::throw_error(ard::error() <<
+            ard::throw_exception(ard::error() <<
                 "basic_string_view::at: __pos "
                 "(which is " << __pos << ") >= size() "
                 "(which is " << this->size() << ')'
@@ -176,7 +176,7 @@ namespace std
         front() const {
             if (this->_M_len > 0)
                 return *this->_M_str;
-            ard::throw_error(
+            ard::throw_exception(
                 ard::error("basic_string_view::front: string is empty"));
         }
 
@@ -184,7 +184,7 @@ namespace std
         back() const {
             if (this->_M_len > 0)
                 return *(this->_M_str + this->_M_len - 1);
-            ard::throw_error(
+            ard::throw_exception(
                 ard::error("basic_string_view::back: string is empty"));
         }
 

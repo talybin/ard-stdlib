@@ -48,7 +48,7 @@ namespace ard
 
     // Call throw_error instead of throw
     [[noreturn]] inline void
-    throw_error(const std::exception& err) {
+    throw_exception(const std::exception& err) {
         if (on_exception)
             on_exception(err);
         std::abort();

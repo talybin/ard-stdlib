@@ -37,6 +37,7 @@
 
 #include "type_traits.hpp"
 #include "utility.hpp"
+#include "exception.hpp"
 
 #include <bits/enable_special_members.h>
 #include <cstdlib>
@@ -48,6 +49,24 @@ namespace std
 
     /// Tag type to disengage optional objects.
     struct nullopt_t { };
+
+    /**
+     *  @brief Exception class thrown when a disengaged optional object is
+     *  dereferenced.
+     *  @ingroup exceptions
+     */
+    struct bad_optional_access : std::exception
+    {
+        bad_optional_access() = default;
+        virtual ~bad_optional_access() = default;
+
+        const char* what() const noexcept override
+        { return "bad optional access"; }
+    };
+
+    [[noreturn]] inline void
+    __throw_bad_optional_access()
+    { ard::throw_exception(bad_optional_access()); }
 
     // This class template manages construction/destruction of
     // the contained value for a std::optional.
@@ -848,7 +867,7 @@ namespace std
         {
             if (this->_M_is_engaged())
                 return this->_M_get();
-            std::abort();
+            __throw_bad_optional_access();
         }
 
         constexpr _Tp&
@@ -856,7 +875,7 @@ namespace std
         {
             if (this->_M_is_engaged())
                 return this->_M_get();
-            std::abort();
+            __throw_bad_optional_access();
         }
 
         constexpr _Tp&&
@@ -864,7 +883,7 @@ namespace std
         {
             if (this->_M_is_engaged())
                 return std::move(this->_M_get());
-            std::abort();
+            __throw_bad_optional_access();
         }
 
         constexpr const _Tp&&
@@ -872,7 +891,7 @@ namespace std
         {
             if (this->_M_is_engaged())
                 return std::move(this->_M_get());
-            std::abort();
+            __throw_bad_optional_access();
         }
 
         template <typename _Up>
