@@ -31,6 +31,48 @@ namespace std
     template <class _Tp>
     struct negation : bool_constant<!bool(_Tp::value)> {};
 
+    #ifndef __cpp_lib_is_swappable
+    /// \see https://en.cppreference.com/w/cpp/types/is_swappable
+    template <class, class = void>
+    struct is_swappable : std::false_type {};
+
+    template <class _Tp>
+    struct is_swappable<_Tp,
+        void_t<decltype(swap(std::declval<_Tp&>(), std::declval<_Tp&>()))>>
+    : std::true_type {};
+
+    template <class _Tp>
+    struct is_nothrow_swappable {
+    private:
+        static bool_constant<noexcept(swap(std::declval<_Tp&>(), std::declval<_Tp&>()))>
+        __test(int);
+        static false_type __test(...);
+    public:
+        static constexpr bool value = decltype(__test(0))::value;
+    };
+
+    template <class, class, class = void>
+    struct is_swappable_with : std::false_type {};
+
+    template <class _Tp, class _Up>
+    struct is_swappable_with<_Tp, _Up, std::void_t<
+        decltype(swap(std::declval<_Tp>(), std::declval<_Up>())),
+        decltype(swap(std::declval<_Up>(), std::declval<_Tp>()))>>
+    : std::true_type {};
+
+    template <class _Tp, class _Up>
+    struct is_nothrow_swappable_with {
+    private:
+        static bool_constant<
+            noexcept(swap(std::declval<_Tp>(), std::declval<_Up>())) &&
+            noexcept(swap(std::declval<_Up>(), std::declval<_Tp>()))>
+        __test(int);
+        static false_type __test(...);
+    public:
+        static constexpr bool value = decltype(__test(0))::value;
+    };
+    #endif
+
 } // namespace std
 #endif // C++17
 

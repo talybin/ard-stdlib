@@ -33,6 +33,7 @@ type_traits.hpp
 * [negation](https://en.cppreference.com/w/cpp/types/negation)
 * [type_identity](https://en.cppreference.com/w/cpp/types/type_identity)
 * [remove_cvref](https://en.cppreference.com/w/cpp/types/remove_cvref)
+* [is_swappable, is_nothrow_swappable, is_swappable_with, is_nothrow_swappable_with](https://en.cppreference.com/w/cpp/types/is_swappable)
 * [nonesuch](https://en.cppreference.com/w/cpp/experimental/nonesuch)
 * [is_detected, detected_or, is_detected_exact, is_detected_convertible](https://en.cppreference.com/w/cpp/experimental/is_detected)
 
