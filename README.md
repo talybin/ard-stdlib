@@ -31,11 +31,17 @@ type_traits.hpp
 * [conjunction](https://en.cppreference.com/w/cpp/types/conjunction)
 * [disjunction](https://en.cppreference.com/w/cpp/types/disjunction)
 * [negation](https://en.cppreference.com/w/cpp/types/negation)
+* [invoke_result](https://en.cppreference.com/w/cpp/types/result_of)
+* [is_invocable, is_invocable_r, is_nothrow_invocable, is_nothrow_invocable_r](https://en.cppreference.com/w/cpp/types/is_invocable)
 * [type_identity](https://en.cppreference.com/w/cpp/types/type_identity)
 * [remove_cvref](https://en.cppreference.com/w/cpp/types/remove_cvref)
 * [is_swappable, is_nothrow_swappable, is_swappable_with, is_nothrow_swappable_with](https://en.cppreference.com/w/cpp/types/is_swappable)
 * [nonesuch](https://en.cppreference.com/w/cpp/experimental/nonesuch)
 * [is_detected, detected_or, is_detected_exact, is_detected_convertible](https://en.cppreference.com/w/cpp/experimental/is_detected)
+
+functional.hpp
+
+* [invoke](https://en.cppreference.com/w/cpp/utility/functional/invoke)
 
 ### Get started
 

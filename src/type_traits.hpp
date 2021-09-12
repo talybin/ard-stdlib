@@ -31,6 +31,48 @@ namespace std
     template <class _Tp>
     struct negation : bool_constant<!bool(_Tp::value)> {};
 
+    /// \see https://en.cppreference.com/w/cpp/types/result_of
+    template <class _Functor, class... _ArgTypes>
+    struct invoke_result : std::result_of<_Functor(_ArgTypes...)> {};
+
+    template <class _Fn, class... _Args>
+    using invoke_result_t = typename invoke_result<_Fn, _Args...>::type;
+
+    /// \see https://en.cppreference.com/w/cpp/types/is_invocable
+    template <class _Fn, class... _ArgTypes>
+    struct is_invocable
+    : __is_invocable_impl<__invoke_result<_Fn, _ArgTypes...>, void>::type {};
+
+    template <class _Ret, class _Fn, class... _ArgTypes>
+    struct is_invocable_r
+    : __is_invocable_impl<__invoke_result<_Fn, _ArgTypes...>, _Ret>::type {};
+
+    template <class _Fn, class... _ArgTypes>
+    struct is_nothrow_invocable
+    : __and_<__is_invocable_impl<__invoke_result<_Fn, _ArgTypes...>, void>,
+        __call_is_nothrow_<_Fn, _ArgTypes...>>::type
+    { };
+
+    namespace __detail
+    {
+        template <class _Result, class _Ret, class = void>
+        struct __is_nt_invocable_impl : false_type { };
+
+        template <class _Result, class _Ret>
+        struct __is_nt_invocable_impl<
+            _Result, _Ret, void_t<typename _Result::type>>
+        : __or_<is_void<_Ret>,
+            __is_nothrow_convertible<typename _Result::type, _Ret>>
+        { };
+
+    } // namespace __detail
+
+    template <class _Ret, class _Fn, class... _ArgTypes>
+    struct is_nothrow_invocable_r
+    : __and_<__detail::__is_nt_invocable_impl<__invoke_result<_Fn, _ArgTypes...>, _Ret>,
+             __call_is_nothrow_<_Fn, _ArgTypes...>>::type
+    { };
+
     #ifndef __cpp_lib_is_swappable
     /// \see https://en.cppreference.com/w/cpp/types/is_swappable
     template <class, class = void>
